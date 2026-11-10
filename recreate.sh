@@ -18,9 +18,9 @@ gh repo edit "$REPO" \
   --add-topic dsh-plugin \
   --description "TaskFlow for DeepSeek Harness: liquid-glass task list, per-task summaries, per-turn digests"
 
-echo "==> 校验旧提交是否已失效"
-for sha in 11020b23916744c277afded4c0a6b11f4206a22e 12c01b1b07951df54d0e1163d76079445f437dac; do
-  code=$(gh api "repos/${REPO}/commits/${sha}" --jq '.sha' 2>/dev/null || echo 404)
-  echo "  ${sha:0:7} -> ${code:0:12}"
-done
+echo "==> 校验"
+count=$(gh api "repos/${REPO}/commits" --jq 'length')
+echo "  远端提交数: ${count}（重建后应为 1）"
+git ls-remote --heads origin
+
 echo "完成：https://github.com/${REPO}"
