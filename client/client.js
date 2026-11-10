@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c95'
+    const CLIENT_BUILD = 'c96'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -404,12 +404,7 @@ window.__ModuleLoader__.load({
       setActive(sessionId) {
         if (this.activeSession === sessionId) return
         this.activeSession = sessionId
-        if (sessionId) {
-          void refresh(sessionId)
-          startStream(sessionId)
-        } else {
-          stopStream()
-        }
+        if (sessionId) void refresh(sessionId)
         this.emit()
       },
       put(sessionId, value) {
@@ -439,74 +434,99 @@ window.__ModuleLoader__.load({
 
     let hostAvailable = true
     /** Live SSE subscription for the active session (null when unavailable). */
-    let stream = null
-    let streamSession = null
-    let streamHealthy = false
-    let streamRetry = null
-    let streamFailures = 0
+    /** sessionId → { refs, source, healthy, failures, retry } — one push per open conversation. */
+    const streams = new Map()
 
-    function stopStream() {
-      if (stream !== null) {
+    function streamHealthy(sessionId) {
+      const entry = streams.get(sessionId)
+      return entry ? entry.healthy === true : false
+    }
+
+    function closeStream(sessionId) {
+      const entry = streams.get(sessionId)
+      if (!entry) return
+      if (entry.retry !== null) window.clearTimeout(entry.retry)
+      if (entry.source) {
         try {
-          stream.close()
+          entry.source.close()
         } catch {
           // already closed
         }
       }
-      stream = null
-      streamSession = null
-      streamHealthy = false
+      streams.delete(sessionId)
     }
 
-    /** Subscribe to host pushes; on failure fall back to polling and retry later. */
-    function startStream(sessionId) {
-      if (typeof EventSource === 'undefined' || !sessionId) return
-      if (stream !== null && streamSession === sessionId) return
-      stopStream()
-      streamSession = sessionId
+    function scheduleRetry(sessionId) {
+      const entry = streams.get(sessionId)
+      if (!entry || entry.failures > 6 || typeof window === 'undefined') return
+      if (entry.retry !== null) window.clearTimeout(entry.retry)
+      const delay = Math.min(30000, 2000 * 2 ** (entry.failures - 1))
+      entry.retry = window.setTimeout(() => {
+        if (!streams.has(sessionId)) return
+        entry.retry = null
+        openStream(sessionId)
+      }, delay)
+    }
+
+    /** Open the push connection for one session (idempotent). */
+    function openStream(sessionId) {
+      const entry = streams.get(sessionId)
+      if (!entry || entry.source || typeof EventSource === 'undefined') return
       let source
       try {
         source = new EventSource(`/taskflow/events?session=${encodeURIComponent(sessionId)}`)
       } catch {
-        streamSession = null
+        entry.failures += 1
+        scheduleRetry(sessionId)
         return
       }
-      stream = source
+      entry.source = source
       source.addEventListener('state', (event) => {
         try {
           const data = JSON.parse(event.data)
           if (!data || data.ok !== true) return
-          streamHealthy = true
-          streamFailures = 0
+          entry.healthy = true
+          entry.failures = 0
           store.put(sessionId, { ...data, loaded: true, fetchedAt: Date.now() })
         } catch {
           // ignore malformed frame
         }
       })
       source.addEventListener('error', () => {
-        streamHealthy = false
+        entry.healthy = false
         try {
           source.close()
         } catch {
-          // ignore
+          // already closed
         }
-        if (stream === source) {
-          stream = null
-          streamSession = null
-        }
-        streamFailures += 1
-        if (streamRetry !== null) window.clearTimeout(streamRetry)
-        // Give up after six attempts and stay on polling; a later refresh or
-        // session switch retries from scratch.
-        if (streamFailures > 6) return
-        const delay = Math.min(30000, 2000 * 2 ** (streamFailures - 1))
-        streamRetry = window.setTimeout(() => {
-          streamRetry = null
-          const active = store.activeSession
-          if (active) startStream(active)
-        }, delay)
+        if (entry.source === source) entry.source = null
+        entry.failures += 1
+        scheduleRetry(sessionId)
       })
     }
+
+    /**
+     * Watch one session while a surface is mounted. Every open conversation gets
+     * its own push + refresh, so switching sessions never starves the others.
+     */
+    function watchSession(sessionId) {
+      if (typeof window === 'undefined' || !sessionId) return () => {}
+      let entry = streams.get(sessionId)
+      if (!entry) {
+        entry = { refs: 0, source: null, healthy: false, failures: 0, retry: null }
+        streams.set(sessionId, entry)
+      }
+      entry.refs += 1
+      void refresh(sessionId)
+      openStream(sessionId)
+      return () => {
+        const current = streams.get(sessionId)
+        if (!current) return
+        current.refs -= 1
+        if (current.refs <= 0) closeStream(sessionId)
+      }
+    }
+
     /** Opens the sidebar tab that lists every segment summary. */
     let openSidebar = null
     /** Which task's detail popover is open; module scope so remounts keep it. */
@@ -568,12 +588,17 @@ window.__ModuleLoader__.load({
       const tick = () => {
         if (poller === null) return
         const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
-        const sessionId = store.activeSession
-        if (!hidden && sessionId) void refresh(sessionId)
-        const snapshot = sessionId ? store.peek(sessionId) : null
-        const busy = snapshot ? (typeof snapshot.openTurn === 'number' || snapshot.pending === true) : false
+        const watched = [...streams.keys()]
+        if (!hidden) {
+          for (const sessionId of watched) void refresh(sessionId)
+        }
+        const busy = watched.some((sessionId) => {
+          const snapshot = store.peek(sessionId)
+          return snapshot ? (typeof snapshot.openTurn === 'number' || snapshot.pending === true) : false
+        })
+        const allPushed = watched.length > 0 && watched.every((sessionId) => streamHealthy(sessionId))
         // A healthy push stream makes polling a pure safety net.
-        const next = streamHealthy ? 8000 : (busy ? POLL_MS_ACTIVE : POLL_MS_IDLE)
+        const next = allPushed ? 8000 : (busy ? POLL_MS_ACTIVE : POLL_MS_IDLE)
         window.setTimeout(tick, next)
       }
       window.setTimeout(tick, POLL_MS_ACTIVE)
@@ -801,6 +826,7 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => {
         store.setActive(sessionId)
+        return watchSession(sessionId)
       }, [sessionId])
 
       // The projection changes exactly when the agent writes the list, so pull
@@ -888,7 +914,7 @@ window.__ModuleLoader__.load({
         }
       }, [total, collapsed])
 
-      useReportGeometry('dock', rootRef, `${collapsed ? 'collapsed' : 'open'} / ${total} tasks / ${segmentCount} segments / sse:${streamHealthy ? 'live' : 'poll'}${layoutNote ? ` / ${layoutNote}` : ''}`)
+      useReportGeometry('dock', rootRef, `${collapsed ? 'collapsed' : 'open'} / ${total} tasks / ${segmentCount} segments / sse:${streamHealthy(sessionId) ? 'live' : 'poll'}${layoutNote ? ` / ${layoutNote}` : ''}`)
 
 
 
