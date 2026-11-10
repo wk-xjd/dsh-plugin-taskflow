@@ -13,8 +13,15 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c69'
-    const POLL_MS = 2500
+    const CLIENT_BUILD = 'c95'
+    /**
+     * true  = shadow DSH's own todo panel (id 'todo', priority -1)
+     * false = render beside it (unique id), so both lists are visible
+     * Override at runtime: window.__DSH_TASKFLOW_REPLACE_DOCK__ = true/false
+     */
+    const DEFAULT_DOCK_MODE = 'custom'
+    const POLL_MS_ACTIVE = 900
+    const POLL_MS_IDLE = 2600
 
     /* ------------------------------------------------------------------ *
      * Copy
@@ -45,6 +52,7 @@ window.__ModuleLoader__.load({
       'panel.segments': '分段小结',
       'panel.empty': '还没有小结。完成一段工作后会自动生成，也可以点下方按钮手动整理。',
       'panel.emptySession': '本会话暂无任务清单',
+      'panel.planning': '正在拆解任务…',
       'panel.noTasks': '本会话还没有任务列表（agent 使用 todo_write 后出现）。',
       'panel.summarize': '整理最近一段',
       'panel.summarizing': '正在整理…',
@@ -58,6 +66,14 @@ window.__ModuleLoader__.load({
       'tasks.header': '{total} 个任务 · 完成 {done} · 待办 {open}',
       'tasks.empty': '（空任务列表）',
       'tasks.title': '任务清单',
+      'tasks.moreDone': '还有 {count} 项已完成',
+      'settings.title': '任务流',
+      'settings.subtitle': '输入框上方显示哪一种任务列表',
+      'settings.custom': 'TaskFlow 面板',
+      'settings.customHint': '进度环、当前任务、计时、等待确认/子 agent 状态，点条目看任务小结',
+      'settings.builtin': 'DSH 内置面板',
+      'settings.builtinHint': '官方样式，只有列表与状态，没有计时与小结',
+      'settings.note': '切换立即生效，无需刷新页面。',
       'tasks.summary.pending': '小结生成中…',
       'tasks.summary.none': '无小结',
       'tasks.detail.steps': '期间动作',
@@ -94,6 +110,7 @@ window.__ModuleLoader__.load({
       'panel.segments': 'Segment summaries',
       'panel.empty': 'No summaries yet. One is generated when a segment of work ends, or press the button below.',
       'panel.emptySession': 'No task list in this session yet',
+      'panel.planning': 'Planning tasks…',
       'panel.noTasks': 'This session has no task list yet (it appears once the agent calls todo_write).',
       'panel.summarize': 'Summarize the last segment',
       'panel.summarizing': 'Summarizing…',
@@ -107,6 +124,14 @@ window.__ModuleLoader__.load({
       'tasks.header': '{total} tasks ({done} done, {open} open)',
       'tasks.empty': '(empty task list)',
       'tasks.title': 'Task list',
+      'tasks.moreDone': '{count} more finished',
+      'settings.title': 'TaskFlow',
+      'settings.subtitle': 'Which task list to show above the composer',
+      'settings.custom': 'TaskFlow panel',
+      'settings.customHint': 'progress ring, current task, timing, waiting/subagent state, per-task summaries',
+      'settings.builtin': 'Built-in DSH panel',
+      'settings.builtinHint': 'the shipped list and statuses only',
+      'settings.note': 'Applies immediately; no reload needed.',
       'tasks.summary.pending': 'summarizing…',
       'tasks.summary.none': 'no summary',
       'tasks.detail.steps': 'Work done',
@@ -162,39 +187,43 @@ window.__ModuleLoader__.load({
 .tf-panel-head { display: flex; align-items: baseline; gap: 8px; }
 .tf-panel-title { font-size: 13px; font-weight: 600; }
 .tf-panel-sub { opacity: .5; }
-.tf-inline { position: relative; display: flex; flex-direction: column; gap: 2px; width: calc(100% - 2px); box-sizing: border-box; padding: 6px 10px 7px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, .09); background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, 0) 46%), color-mix(in oklab, currentColor 1.6%, rgba(128, 128, 128, .035)); backdrop-filter: blur(34px) saturate(1.7) brightness(1.05); -webkit-backdrop-filter: blur(34px) saturate(1.7) brightness(1.05); box-shadow: 0 10px 30px rgba(0, 0, 0, .14), inset 0 1px 0 rgba(255, 255, 255, .10), inset 0 -1px 0 rgba(0, 0, 0, .14); }
+.tf-inline { position: relative; display: flex; flex-direction: column; gap: 3px; width: calc(100% - 2px); box-sizing: border-box; padding: 10px 15px 11px; border-radius: 18px; border: 1px solid rgba(255, 255, 255, .09); background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, 0) 46%), color-mix(in oklab, currentColor 1.6%, rgba(128, 128, 128, .035)); backdrop-filter: blur(34px) saturate(1.7) brightness(1.05); -webkit-backdrop-filter: blur(34px) saturate(1.7) brightness(1.05); box-shadow: 0 10px 30px rgba(0, 0, 0, .14), inset 0 1px 0 rgba(255, 255, 255, .10), inset 0 -1px 0 rgba(0, 0, 0, .14); }
 @property --tf-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 @keyframes tf-spin { to { --tf-angle: 360deg; } }
 @keyframes tf-pulse { 0%, 100% { transform: scale(.85); opacity: .7; } 50% { transform: scale(1.12); opacity: 1; } }
+@keyframes tf-glow { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 .tf-inline-empty { padding: 5px 10px; }
 .tf-inline-empty .tf-inline-head { opacity: .42; font-size: 10.5px; }
 .tf-empty-dot { flex: 0 0 auto; font-size: 10px; opacity: .7; }
-.tf-inline-head { display: flex; align-items: center; gap: 7px; font-size: 11px; letter-spacing: .01em; transition: color .3s ease; }
+.tf-inline-head { display: flex; align-items: center; gap: 10px; padding: 1px 0 3px; font-size: 12px; letter-spacing: .01em; transition: color .3s ease; }
 .tf-inline-head[data-state="done"] { color: #4ec97a; }
 .tf-inline-head[data-state="done"] .tf-inline-count { opacity: .8; }
 .tf-inline-head[data-state="done"] .tf-inline-current { opacity: .95; }
 .tf-inline-head[data-state="running"] .tf-inline-current { color: #e3b341; opacity: .85; }
-.tf-inline-count { flex: 0 0 auto; font-variant-numeric: tabular-nums; opacity: .52; }
-.tf-inline-current { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .62; }
-.tf-inline-toggle { flex: 0 0 auto; width: 16px; height: 16px; font-size: 9px; opacity: .35; }
+.tf-inline-count { flex: 0 0 auto; font-variant-numeric: tabular-nums; opacity: .45; }
+.tf-inline-current { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .55; }
+.tf-inline-toggle { flex: 0 0 auto; width: 18px; height: 18px; padding: 0; border: 0; background: transparent; color: inherit; opacity: .45; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.tf-chevron { transition: transform .18s ease; }
+.tf-inline-toggle[data-collapsed="true"] .tf-chevron { transform: rotate(-90deg); }
 .tf-inline-toggle:hover { opacity: .8; }
-.tf-inline-list { margin: 3px 0 0; padding: 3px 0 0 1px; border-top: 1px solid color-mix(in oklab, currentColor 6%, transparent); list-style: none; display: flex; flex-direction: column; gap: 0; max-height: 150px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: color-mix(in oklab, currentColor 16%, transparent) transparent; }
+.tf-inline-list { margin: 4px 0 0; padding: 0 0 0 1px; list-style: none; display: flex; flex-direction: column; gap: 0; max-height: 150px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: color-mix(in oklab, currentColor 16%, transparent) transparent; }
 .tf-inline-list::-webkit-scrollbar { width: 6px; height: 0; }
 .tf-inline-list::-webkit-scrollbar-track { background: transparent; }
 .tf-inline-list::-webkit-scrollbar-thumb { background: color-mix(in oklab, currentColor 14%, transparent); border-radius: 3px; }
 .tf-inline-list::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, currentColor 26%, transparent); }
 .tf-item { list-style: none; }
-.tf-item-btn { position: relative; display: flex; align-items: flex-start; gap: 7px; width: 100%; box-sizing: border-box; padding: 1px 4px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; font-size: 11.5px; line-height: 1.55; text-align: left; cursor: pointer; }
+.tf-item-btn { position: relative; display: flex; align-items: flex-start; gap: 9px; width: 100%; box-sizing: border-box; padding: 5px 6px; border: 0; border-radius: 11px; background: transparent; color: inherit; font: inherit; font-size: 12.5px; line-height: 1.6; text-align: left; cursor: pointer; }
 .tf-item-btn:hover, .tf-item-btn[data-active="true"] { background: color-mix(in oklab, currentColor 7%, transparent); }
 .tf-item-btn[data-delegated="true"] { background: color-mix(in oklab, #8b7cff 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, #8b7cff 24%, transparent); }
 .tf-inline-head[data-state="delegated"] .tf-inline-current { color: #a99bff; opacity: .95; }
-.tf-item-btn[data-waiting="true"] { background: color-mix(in oklab, #d2a24c 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, #d2a24c 22%, transparent); }
+.tf-item-btn[data-waiting="true"] { background: color-mix(in oklab, #d2a24c 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, #d2a24c 48%, transparent), 0 0 10px rgba(210, 162, 76, .10); }
+.tf-item-btn[data-waiting="true"]::before { content: ''; position: absolute; inset: 0; border-radius: 11px; padding: 1px; background: color-mix(in oklab, #d2a24c 60%, transparent); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; pointer-events: none; }
 .tf-item-btn[data-waiting="true"] .tf-item-mark { color: #d2a24c; opacity: .9; }
 .tf-inline-head[data-state="waiting"] .tf-inline-current { color: #d2a24c; opacity: .9; }
 .tf-item-btn[data-status="in_progress"]:not([data-waiting="true"]) { background: color-mix(in oklab, #6aa6ff 9%, transparent); box-shadow: 0 0 16px rgba(110, 160, 255, .16), inset 0 0 14px rgba(110, 160, 255, .10); }
-.tf-item-btn[data-status="in_progress"]:not([data-waiting="true"])::before { content: ''; position: absolute; inset: 0; border-radius: 6px; padding: 1px; background: conic-gradient(from var(--tf-angle, 0deg), #ff6b6b, #ffd166, #6bcb77, #4d96ff, #b983ff, #ff6b6b); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; opacity: .8; animation: tf-spin 6s linear infinite; pointer-events: none; }
-.tf-item-btn[data-status="in_progress"]:not([data-waiting="true"])::after { content: ''; position: absolute; inset: 0; border-radius: 6px; pointer-events: none; background: radial-gradient(130% 160% at 12% 0%, rgba(255, 110, 110, .20), transparent 46%), radial-gradient(130% 160% at 50% 0%, rgba(255, 210, 100, .16), transparent 46%), radial-gradient(130% 160% at 88% 0%, rgba(90, 160, 255, .22), transparent 52%); filter: blur(7px); opacity: .8; }
-.tf-item-mark { flex: 0 0 auto; width: 12px; text-align: center; font-size: 10.5px; line-height: 1.55; }
+.tf-item-btn[data-status="in_progress"]:not([data-waiting="true"])::before { content: ''; position: absolute; inset: 0; border-radius: 11px; padding: 2px; background: conic-gradient(from var(--tf-angle, 0deg), #ff6b6b, #ffd166, #6bcb77, #4d96ff, #b983ff, #ff6b6b); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; opacity: .95; animation: tf-spin 2.4s linear infinite; pointer-events: none; }
+.tf-item-btn[data-status="in_progress"]:not([data-waiting="true"])::after { content: ''; position: absolute; inset: 0; border-radius: 11px; pointer-events: none; background: radial-gradient(130% 160% at 12% 0%, rgba(255, 110, 110, .20), transparent 46%), radial-gradient(130% 160% at 50% 0%, rgba(255, 210, 100, .16), transparent 46%), radial-gradient(130% 160% at 88% 0%, rgba(90, 160, 255, .22), transparent 52%); filter: blur(8px); opacity: .8; animation: tf-glow 2.4s ease-in-out infinite; }
+.tf-item-mark { flex: 0 0 auto; width: 14px; text-align: center; font-size: 12px; line-height: 1.6; }
 .tf-item-btn[data-status="completed"] .tf-item-mark { color: #3fb950; }
 .tf-item-btn[data-status="completed"] .tf-item-text { opacity: .52; }
 .tf-item-btn[data-status="in_progress"] .tf-item-mark { color: #d29922; }
@@ -203,8 +232,10 @@ window.__ModuleLoader__.load({
 .tf-item-btn[data-status="pending"] .tf-item-text { opacity: .72; }
 .tf-item-text { flex: 1 1 auto; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; word-break: break-word; }
 .tf-item-parallel { opacity: .5; font-variant-numeric: tabular-nums; }
-.tf-item-time { flex: 0 0 auto; opacity: .34; font-size: 10.5px; font-variant-numeric: tabular-nums; line-height: 1.55; }
-.tf-item-hint { flex: 0 0 auto; font-size: 10.5px; opacity: .38; }
+.tf-item-time { flex: 0 0 auto; opacity: .3; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.6; }
+.tf-item-hint { flex: 0 0 auto; font-size: 11px; opacity: .26; }
+.tf-item-more .tf-item-btn { opacity: .45; font-size: 10.5px; justify-content: center; }
+.tf-item-more .tf-item-btn:hover { opacity: .8; }
 .tf-item-caret { flex: 0 0 auto; font-size: 12px; opacity: .35; }
 .tf-item-btn[data-static="true"] { cursor: default; }
 .tf-item-btn[data-static="true"]:hover { background: transparent; }
@@ -222,7 +253,7 @@ window.__ModuleLoader__.load({
 .tf-row-btn:hover { background: color-mix(in oklab, currentColor 6%, transparent); }
 .tf-row-caret { flex: 0 0 auto; font-size: 9px; opacity: .35; }
 .tf-row-detail { display: flex; flex-wrap: wrap; gap: 10px; padding: 1px 0 6px 22px; font-size: 11px; opacity: .55; font-variant-numeric: tabular-nums; }
-.tf-tasks { margin: 8px 0 4px; padding: 10px 12px; border-radius: 10px; border: 1px solid color-mix(in oklab, currentColor 13%, transparent); background: color-mix(in oklab, currentColor 3.5%, transparent); }
+.tf-tasks { margin: 8px 0 4px; padding: 10px 12px; border-radius: 14px; border: 1px solid color-mix(in oklab, currentColor 13%, transparent); background: color-mix(in oklab, currentColor 3.5%, transparent); }
 .tf-tasks-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 0; margin-bottom: 6px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 11.5px; opacity: .55; font-variant-numeric: tabular-nums; text-align: left; cursor: pointer; }
 .tf-tasks-head:hover { opacity: .8; }
 .tf-tasks-caret { font-size: 9px; }
@@ -240,7 +271,7 @@ window.__ModuleLoader__.load({
 .tf-header-btn { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border: 1px solid color-mix(in oklab, currentColor 14%, transparent); border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 11px; line-height: 1; cursor: pointer; opacity: .72; }
 .tf-header-btn:hover { opacity: 1; background: color-mix(in oklab, currentColor 7%, transparent); }
 .tf-header-count { opacity: .75; font-variant-numeric: tabular-nums; }
-.tf-pop { position: fixed; z-index: 70; width: min(430px, calc(100vw - 24px)); max-height: min(62vh, 560px); overflow: auto; padding: 10px 12px 12px; border-radius: 12px; border: 1px solid color-mix(in oklab, currentColor 16%, transparent); background: color-mix(in oklab, currentColor 8%, rgba(128, 128, 128, .18)); backdrop-filter: blur(18px) saturate(1.15); -webkit-backdrop-filter: blur(18px) saturate(1.15); box-shadow: 0 14px 38px rgba(0, 0, 0, .32); font-size: 12px; color: inherit; }
+.tf-pop { position: fixed; z-index: 70; width: min(430px, calc(100vw - 24px)); max-height: min(62vh, 560px); overflow: auto; padding: 10px 12px 12px; border-radius: 16px; border: 1px solid color-mix(in oklab, currentColor 16%, transparent); background: color-mix(in oklab, currentColor 8%, rgba(128, 128, 128, .18)); backdrop-filter: blur(18px) saturate(1.15); -webkit-backdrop-filter: blur(18px) saturate(1.15); box-shadow: 0 14px 38px rgba(0, 0, 0, .32); font-size: 12px; color: inherit; }
 .tf-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid color-mix(in oklab, currentColor 10%, transparent); }
 .tf-pop-title { font-size: 12px; font-weight: 600; opacity: .8; }
 .tf-body { display: flex; flex-direction: column; gap: 12px; }
@@ -267,6 +298,17 @@ window.__ModuleLoader__.load({
 .tf-btn[disabled] { opacity: .45; cursor: default; }
 .tf-empty { opacity: .5; line-height: 1.6; }
 .tf-error { color: #e5534b; opacity: .9; }
+.tf-settings { display: flex; flex-direction: column; gap: 8px; padding: 4px 0; font-size: 12px; }
+.tf-settings-head { font-size: 13px; font-weight: 600; }
+.tf-settings-sub { opacity: .55; margin-bottom: 4px; }
+.tf-option { display: flex; align-items: flex-start; gap: 9px; padding: 8px 10px; border-radius: 8px; border: 1px solid color-mix(in oklab, currentColor 12%, transparent); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.tf-option:hover { background: color-mix(in oklab, currentColor 5%, transparent); }
+.tf-option[data-selected="true"] { border-color: color-mix(in oklab, #4ec97a 45%, transparent); background: color-mix(in oklab, #4ec97a 8%, transparent); }
+.tf-option-mark { flex: 0 0 auto; opacity: .7; }
+.tf-option-body { display: flex; flex-direction: column; gap: 2px; }
+.tf-option-title { font-weight: 500; }
+.tf-option-hint { opacity: .55; font-size: 11px; line-height: 1.5; }
+.tf-settings-note { opacity: .45; font-size: 11px; }
 `
 
     const reportedGeometry = new Map()
@@ -325,12 +367,16 @@ window.__ModuleLoader__.load({
 
     function injectStyles() {
       if (typeof document === 'undefined') return
-      if (document.querySelector('style[data-plugin-css="dsh-plugin-taskflow"]')) return
-      const style = document.createElement('style')
+      // Keyed by build: an HMR swap must replace the stylesheet too. Guarding on
+      // "a tag exists" silently kept the FIRST build's CSS forever.
+      const existing = document.querySelector('style[data-plugin-css="dsh-plugin-taskflow"]')
+      if (existing && existing.dataset.build === CLIENT_BUILD && existing.textContent === CSS) return
+      const style = existing || document.createElement('style')
       style.dataset.plugin = ID
       style.dataset.pluginCss = ID
+      style.dataset.build = CLIENT_BUILD
       style.textContent = CSS
-      document.head.appendChild(style)
+      if (!existing) document.head.appendChild(style)
     }
 
     /* ------------------------------------------------------------------ *
@@ -358,7 +404,12 @@ window.__ModuleLoader__.load({
       setActive(sessionId) {
         if (this.activeSession === sessionId) return
         this.activeSession = sessionId
-        if (sessionId) void refresh(sessionId)
+        if (sessionId) {
+          void refresh(sessionId)
+          startStream(sessionId)
+        } else {
+          stopStream()
+        }
         this.emit()
       },
       put(sessionId, value) {
@@ -368,7 +419,10 @@ window.__ModuleLoader__.load({
           && previous.updatedAt === value.updatedAt
           && previous.pending === value.pending
           && previous.lastTurn === value.lastTurn
-          && (previous.segments || []).length === (value.segments || []).length
+          && previous.openTurn === value.openTurn
+          && previous.delegates === value.delegates
+          && previous.segmentCount === value.segmentCount
+          && (previous.latestSegment?.turn ?? null) === (value.latestSegment?.turn ?? null)
           && previous.tasks?.updatedAt === value.tasks?.updatedAt) return
         this.emit()
       },
@@ -384,6 +438,75 @@ window.__ModuleLoader__.load({
     }
 
     let hostAvailable = true
+    /** Live SSE subscription for the active session (null when unavailable). */
+    let stream = null
+    let streamSession = null
+    let streamHealthy = false
+    let streamRetry = null
+    let streamFailures = 0
+
+    function stopStream() {
+      if (stream !== null) {
+        try {
+          stream.close()
+        } catch {
+          // already closed
+        }
+      }
+      stream = null
+      streamSession = null
+      streamHealthy = false
+    }
+
+    /** Subscribe to host pushes; on failure fall back to polling and retry later. */
+    function startStream(sessionId) {
+      if (typeof EventSource === 'undefined' || !sessionId) return
+      if (stream !== null && streamSession === sessionId) return
+      stopStream()
+      streamSession = sessionId
+      let source
+      try {
+        source = new EventSource(`/taskflow/events?session=${encodeURIComponent(sessionId)}`)
+      } catch {
+        streamSession = null
+        return
+      }
+      stream = source
+      source.addEventListener('state', (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          if (!data || data.ok !== true) return
+          streamHealthy = true
+          streamFailures = 0
+          store.put(sessionId, { ...data, loaded: true, fetchedAt: Date.now() })
+        } catch {
+          // ignore malformed frame
+        }
+      })
+      source.addEventListener('error', () => {
+        streamHealthy = false
+        try {
+          source.close()
+        } catch {
+          // ignore
+        }
+        if (stream === source) {
+          stream = null
+          streamSession = null
+        }
+        streamFailures += 1
+        if (streamRetry !== null) window.clearTimeout(streamRetry)
+        // Give up after six attempts and stay on polling; a later refresh or
+        // session switch retries from scratch.
+        if (streamFailures > 6) return
+        const delay = Math.min(30000, 2000 * 2 ** (streamFailures - 1))
+        streamRetry = window.setTimeout(() => {
+          streamRetry = null
+          const active = store.activeSession
+          if (active) startStream(active)
+        }, delay)
+      })
+    }
     /** Opens the sidebar tab that lists every segment summary. */
     let openSidebar = null
     /** Which task's detail popover is open; module scope so remounts keep it. */
@@ -435,13 +558,31 @@ window.__ModuleLoader__.load({
     }
 
     let poller = null
+    /**
+     * Self-rescheduling poll. A running turn needs near-real-time status
+     * (paused / subagent / summary flags), an idle conversation does not.
+     */
     function startPoller() {
       if (poller !== null || typeof window === 'undefined') return
-      poller = window.setInterval(() => {
-        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      poller = true
+      const tick = () => {
+        if (poller === null) return
+        const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
         const sessionId = store.activeSession
-        if (sessionId) void refresh(sessionId)
-      }, POLL_MS)
+        if (!hidden && sessionId) void refresh(sessionId)
+        const snapshot = sessionId ? store.peek(sessionId) : null
+        const busy = snapshot ? (typeof snapshot.openTurn === 'number' || snapshot.pending === true) : false
+        // A healthy push stream makes polling a pure safety net.
+        const next = streamHealthy ? 8000 : (busy ? POLL_MS_ACTIVE : POLL_MS_IDLE)
+        window.setTimeout(tick, next)
+      }
+      window.setTimeout(tick, POLL_MS_ACTIVE)
+      // Coming back to the window should not wait for the next tick.
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible' && store.activeSession) void refresh(store.activeSession)
+        })
+      }
     }
 
     /* ------------------------------------------------------------------ *
@@ -527,6 +668,71 @@ window.__ModuleLoader__.load({
      * Dock strip
      * ------------------------------------------------------------------ */
 
+    /**
+     * Per-surface error boundary: a render error blanks that surface and is
+     * reported, then retried once after a pause. Without it, one bad frame
+     * unmounts the whole plugin entry and the user sees "nothing happens".
+     */
+    class SurfaceBoundary extends React.Component {
+      constructor(props) {
+        super(props)
+        this.state = { failed: false }
+        this.timer = null
+      }
+
+      static getDerivedStateFromError() {
+        return { failed: true }
+      }
+
+      componentDidCatch(error) {
+        reportGeometry('crash', null, `${this.props.part}: ${String(error?.message ?? error)}`)
+        if (this.timer) window.clearTimeout(this.timer)
+        this.timer = window.setTimeout(() => this.setState({ failed: false }), 5000)
+      }
+
+      componentWillUnmount() {
+        if (this.timer) window.clearTimeout(this.timer)
+      }
+
+      render() {
+        return this.state.failed ? null : this.props.children
+      }
+    }
+
+    const guarded = (part, Component) => (props) => h(SurfaceBoundary, { part }, h(Component, props))
+
+    const DOCK_MODE_KEY = 'taskflow.dockMode'
+    const dockModeListeners = new Set()
+
+    /** 'custom' (our panel) or 'builtin' (DSH's own panel). */
+    function readDockMode() {
+      try {
+        if (typeof window !== 'undefined' && typeof window.__DSH_TASKFLOW_REPLACE_DOCK__ === 'boolean') {
+          return window.__DSH_TASKFLOW_REPLACE_DOCK__ ? 'custom' : 'builtin'
+        }
+        const stored = window.localStorage?.getItem(DOCK_MODE_KEY)
+        if (stored === 'custom' || stored === 'builtin') return stored
+      } catch {
+        // storage unavailable: fall through to the default
+      }
+      return DEFAULT_DOCK_MODE
+    }
+
+    function writeDockMode(mode) {
+      try {
+        window.localStorage?.setItem(DOCK_MODE_KEY, mode)
+      } catch {
+        // ignore
+      }
+      for (const listener of dockModeListeners) {
+        try {
+          listener(mode)
+        } catch {
+          // ignore
+        }
+      }
+    }
+
     /** Crisp progress ring: an SVG stroke fills with the done ratio. */
     function ProgressRing(props) {
       const size = props.size || 14
@@ -570,9 +776,20 @@ window.__ModuleLoader__.load({
       const sessionId = props.sessionId
       const snapshot = useSnapshot(sessionId)
       const todos = props.useProjection ? props.useProjection('todos') : undefined
-      const list = currentTodos(todos)
-      const [collapsed, setCollapsed] = React.useState(false)
+      const projectionList = currentTodos(todos)
+      // Compatibility fallback: if the shipped `todos` projection is missing (or
+      // renamed in a future DSH), the host's own list for the running turn keeps
+      // the panel working.
+      const hostList = snapshot.currentListTurn !== null
+        && snapshot.currentListTurn !== undefined
+        && snapshot.currentListTurn === snapshot.openTurn
+        ? (snapshot.currentList || [])
+        : []
+      const list = projectionList.length > 0 ? projectionList : hostList
+      const [collapsed, setCollapsed] = React.useState(props.compact === true)
+      const [showAllDone, setShowAllDone] = React.useState(false)
       const [detail, setDetailState] = React.useState(uiState.detail)
+      const [detailItem, setDetailItem] = React.useState(null)
       const setDetail = (value) => {
         uiState.detail = value
         setDetailState(value)
@@ -585,6 +802,12 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         store.setActive(sessionId)
       }, [sessionId])
+
+      // The projection changes exactly when the agent writes the list, so pull
+      // our own state at that moment instead of waiting for the next poll.
+      React.useEffect(() => {
+        if (sessionId) void refresh(sessionId)
+      }, [sessionId, todos])
 
       // The list and its detail only change on user action. Nothing auto-opens:
       // switching conversations must not pop a panel in the user's face.
@@ -599,8 +822,8 @@ window.__ModuleLoader__.load({
       const parallel = running > 1
       const total = list.length
       const done = list.filter((todo) => todo.status === 'completed').length
-      const segments = snapshot.segments || []
-      const latest = segments.length > 0 ? segments[segments.length - 1] : null
+      const segmentCount = Number(snapshot.segmentCount) || 0
+      const latest = snapshot.latestSegment || null
       const layoutNote = liveLayout.current ? JSON.stringify(liveLayout.current) : ''
       const ratio = total === 0 ? 0 : Math.round((done / total) * 100)
 
@@ -665,13 +888,16 @@ window.__ModuleLoader__.load({
         }
       }, [total, collapsed])
 
-      useReportGeometry('dock', rootRef, `${collapsed ? 'collapsed' : 'open'} / ${total} tasks / ${segments.length} segments${layoutNote ? ` / ${layoutNote}` : ''}`)
+      useReportGeometry('dock', rootRef, `${collapsed ? 'collapsed' : 'open'} / ${total} tasks / ${segmentCount} segments / sse:${streamHealthy ? 'live' : 'poll'}${layoutNote ? ` / ${layoutNote}` : ''}`)
+
+
+
       useReportGeometry('detail', detailRef, detail ? detail.content : 'closed')
 
       // Open one task's detail; the anchor is the row that was clicked.
       const openDetail = (content, element) => {
         detailAnchor.current = element || null
-        setDetail({ content })
+        setDetail({ content, sessionId })
       }
 
       // While a detail is open: close on outside click / Esc, follow the anchor.
@@ -693,14 +919,46 @@ window.__ModuleLoader__.load({
         }
       }, [detail])
 
+      // Steps and files are no longer carried in the poll frame: pull them when
+      // the popover opens.
+      React.useEffect(() => {
+        if (!detail || !detail.content) {
+          setDetailItem(null)
+          return undefined
+        }
+        let cancelled = false
+        const load = async () => {
+          try {
+            const response = await fetch(`/taskflow/task?session=${encodeURIComponent(detail.sessionId || store.activeSession || '')}&content=${encodeURIComponent(detail.content)}`, {
+              credentials: 'same-origin',
+              headers: { accept: 'application/json' },
+            })
+            if (!response.ok) return
+            const data = await response.json()
+            if (!cancelled && data && data.ok) setDetailItem(data.item)
+          } catch {
+            // keep the light item as a fallback
+          }
+        }
+        void load()
+        return () => {
+          cancelled = true
+        }
+      }, [detail?.content])
+
       // Nothing at all yet: still show that the plugin is here, so every
       // conversation has the same anchor instead of silently disappearing.
+      // While a turn is open, say "planning" instead of "nothing here" — the
+      // list is about to arrive, and the user should see that immediately.
       if (total === 0 && !latest) {
         return h('div', { className: 'tf-float', ref: rootRef },
           h('div', { className: 'tf-inline tf-inline-empty' },
             h('div', { className: 'tf-inline-head' },
-              h('span', { className: 'tf-empty-dot', 'aria-hidden': true }, '◌'),
-              h('span', { className: 'tf-inline-current' }, t('panel.emptySession')))))
+              turnOpen
+                ? h('span', { className: 'tf-dot', 'aria-hidden': true })
+                : h('span', { className: 'tf-empty-dot', 'aria-hidden': true }, '◌'),
+              h('span', { className: 'tf-inline-current' },
+                turnOpen ? t('panel.planning') : t('panel.emptySession')))))
       }
 
       // No task list: fall back to the one-line summary pill (click -> sidebar).
@@ -729,7 +987,23 @@ window.__ModuleLoader__.load({
             h('span', { className: 'tf-pill-text' }, clip(latest.title || '', 20)))))
       }
 
-      const rows = mergeTasks(list, snapshot, Date.now()).map((todo) => {
+      const merged = mergeTasks(list, snapshot, Date.now())
+      const finished = merged.filter((todo) => todo.status === 'completed')
+      const hiddenDone = showAllDone ? 0 : Math.max(0, finished.length - 3)
+      const visible = hiddenDone === 0
+        ? merged
+        : merged.filter((todo) => todo.status !== 'completed' || finished.indexOf(todo) >= hiddenDone)
+      const moreRow = hiddenDone > 0
+        ? h('li', { key: '__more', className: 'tf-item tf-item-more' },
+          h('button', {
+            type: 'button',
+            className: 'tf-item-btn',
+            'data-more': 'true',
+            onClick: () => setShowAllDone(true),
+          }, h('span', { className: 'tf-item-text' }, t('tasks.moreDone', { count: hiddenDone }))))
+        : null
+
+      const rows = visible.map((todo) => {
         const item = snapshot.tasks?.items?.[todo.content] || {}
         const summary = typeof item.summary === 'string' ? item.summary : ''
         const hint = summary
@@ -762,7 +1036,9 @@ window.__ModuleLoader__.load({
             : h('div', { className: 'tf-item-btn', 'data-status': todo.status, 'data-static': 'true' }, body))
       })
 
-      const detailTiming = detail ? (snapshot.tasks?.items?.[detail.content] || {}) : {}
+      const detailTiming = detail
+        ? { ...(snapshot.tasks?.items?.[detail.content] || {}), ...(detailItem || {}) }
+        : {}
       const detailElapsed = (() => {
         if (detailTiming.startedAt && detailTiming.completedAt) return detailTiming.completedAt - detailTiming.startedAt
         if (detailTiming.startedAt) return Date.now() - detailTiming.startedAt
@@ -846,16 +1122,31 @@ window.__ModuleLoader__.load({
                 : (done === total ? t('status.allDone') : '')),
             h('button', {
               type: 'button',
-              className: 'tf-icon-btn tf-inline-toggle',
+              className: 'tf-inline-toggle',
+              'data-collapsed': collapsed ? 'true' : 'false',
               'aria-label': collapsed ? t('strip.expand') : t('strip.collapse'),
               title: collapsed ? t('strip.expand') : t('strip.collapse'),
               onClick: () => setCollapsed((value) => !value),
-            }, collapsed ? '▸' : '▾')),
+            },
+            h('svg', {
+              className: 'tf-chevron',
+              width: 14,
+              height: 14,
+              viewBox: '0 0 16 16',
+              'aria-hidden': true,
+            }, h('path', {
+              d: 'M4 6l4 4 4-4',
+              fill: 'none',
+              stroke: 'currentColor',
+              'stroke-width': 1.6,
+              'stroke-linecap': 'round',
+              'stroke-linejoin': 'round',
+            })))),
           collapsed ? null : h('ul', { className: 'tf-inline-list' }, rows)),
         detailPopover)
     }
 
-    const TaskStripEntry = (props) => h(TaskStrip, props)
+    const TaskStripEntry = (props) => h(SurfaceBoundary, { part: 'dock' }, h(TaskStrip, props))
 
     /* ------------------------------------------------------------------ *
      * Todo list card in the transcript (replaces the built-in one-liner)
@@ -915,7 +1206,7 @@ window.__ModuleLoader__.load({
         h('span', { className: 'tf-tasks-text' }, todo.content)))) : null)
     }
 
-    const TodoCardEntry = (props) => h(TodoCard, props)
+    const TodoCardEntry = (props) => h(SurfaceBoundary, { part: 'taskcard' }, h(TodoCard, props))
 
     /* ------------------------------------------------------------------ *
      * Floating card content
@@ -928,14 +1219,36 @@ window.__ModuleLoader__.load({
       const [note, setNote] = React.useState('')
       const now = useNow(true)
       const rootRef = React.useRef(null)
-      useReportGeometry('sidebar', rootRef, `${(snapshot.segments || []).length} segments`)
+      const [segments, setSegments] = React.useState([])
+      const segmentCount = Number(snapshot.segmentCount) || 0
+      React.useEffect(() => {
+        let cancelled = false
+        const load = async () => {
+          try {
+            const response = await fetch(`/taskflow/segments?session=${encodeURIComponent(sessionId)}`, {
+              credentials: 'same-origin',
+              headers: { accept: 'application/json' },
+            })
+            if (!response.ok) return
+            const data = await response.json()
+            if (!cancelled && data && data.ok) setSegments(data.segments || [])
+          } catch {
+            // keep whatever we already have
+          }
+        }
+        void load()
+        return () => {
+          cancelled = true
+        }
+      }, [sessionId, segmentCount])
+      useReportGeometry('sidebar', rootRef, `${segments.length} segments`)
 
       React.useEffect(() => {
         store.setActive(sessionId)
         void refresh(sessionId)
       }, [sessionId])
 
-      const segments = (snapshot.segments || []).slice().sort((a, b) => b.turn - a.turn)
+      const ordered = segments.slice().sort((a, b) => b.turn - a.turn)
 
       const summarize = async () => {
         setBusy(true)
@@ -946,7 +1259,7 @@ window.__ModuleLoader__.load({
         window.setTimeout(() => void refresh(sessionId), 600)
       }
 
-      const segmentRows = segments.map((segment) => h('div', { key: segment.turn, className: 'tf-seg' },
+      const segmentRows = ordered.map((segment) => h('div', { key: segment.turn, className: 'tf-seg' },
         h('div', { className: 'tf-seg-head' },
           h('span', { className: 'tf-seg-title' }, segment.title || t('card.turn', { turn: segment.turn })),
           h('span', { className: 'tf-seg-meta' },
@@ -977,7 +1290,46 @@ window.__ModuleLoader__.load({
           note ? h('div', { className: 'tf-error' }, note) : null))
     }
 
-    const SummaryPanelEntry = (props) => h(SummaryPanel, props)
+    const SummaryPanelEntry = (props) => h(SurfaceBoundary, { part: 'sidebar' }, h(SummaryPanel, props))
+
+    /* ------------------------------------------------------------------ *
+     * Settings page: pick our panel or the shipped one
+     * ------------------------------------------------------------------ */
+
+    function TaskflowSettings() {
+      const [mode, setMode] = React.useState(() => readDockMode())
+      React.useEffect(() => {
+        const listener = (next) => setMode(next)
+        dockModeListeners.add(listener)
+        return () => dockModeListeners.delete(listener)
+      }, [])
+
+      const choose = (next) => {
+        writeDockMode(next)
+        if (typeof applyDockModeRef.current === 'function') applyDockModeRef.current(next)
+        setMode(next)
+      }
+
+      const option = (value, label, hint) => h('button', {
+        type: 'button',
+        className: 'tf-option',
+        'data-selected': mode === value ? 'true' : 'false',
+        onClick: () => choose(value),
+      },
+      h('span', { className: 'tf-option-mark', 'aria-hidden': true }, mode === value ? '◉' : '○'),
+      h('span', { className: 'tf-option-body' },
+        h('span', { className: 'tf-option-title' }, label),
+        h('span', { className: 'tf-option-hint' }, hint)))
+
+      return h('div', { className: 'tf-settings' },
+        h('div', { className: 'tf-settings-head' }, t('settings.title')),
+        h('div', { className: 'tf-settings-sub' }, t('settings.subtitle')),
+        option('custom', t('settings.custom'), t('settings.customHint')),
+        option('builtin', t('settings.builtin'), t('settings.builtinHint')),
+        h('div', { className: 'tf-settings-note' }, t('settings.note')))
+    }
+
+    const applyDockModeRef = { current: null }
 
     /* ------------------------------------------------------------------ *
      * Wiring
@@ -1027,58 +1379,89 @@ window.__ModuleLoader__.load({
       // One surface only: a floating pill above the composer that expands into a
       // floating card. It reuses the shipped `todo` cell, so the composer keeps a
       // single todo surface (lower priority shadows the built-in panel).
-      mark('dock', () => ctx.effect(() => ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-        name: 'conversation.input.dock',
-        id: 'todo',
-        order: 0,
-        priority: -1,
-        locale: NS,
-      }, TaskStripEntry)), 'taskflow: pill'))
-
-      // Sidebar tab: every segment summary in one place, opened from the pill's
-      // progress ring (not a separate navigation entry).
-      mark('sidebar', () => ctx.inject(['sidebarRightTabs', 'sidebarRight'], (host) => {
-        applied.sidebarReady = true
-        const KIND = 'taskflow'
-        host.effect(() => host.sidebarRightTabs.register({
-          id: ID,
-          kind: KIND,
-          priority: 'extension',
-          title: () => t('panel.title'),
-          guide: [{
-            order: 40,
-            title: () => t('panel.guide.title'),
-            description: () => t('panel.guide.description'),
-            icon: TaskflowIcon,
-          }],
-        }), 'taskflow: sidebar type')
-
-        host.effect(() => host.slots.inject('sidebar.right.pane.tab', () => host.slots.register({
-          name: 'sidebar.right.pane.tab',
-          key: ID,
-          locale: NS,
-        }, SummaryPanelEntry)), 'taskflow: sidebar body')
-
-        openSidebar = () => {
+      // Mutually exclusive dock modes: ours (shadows the shipped panel) or the
+      // shipped panel alone. Switchable at runtime from Settings → 任务流.
+      let dockHandle = null
+      const applyDockMode = (mode) => {
+        if (dockHandle) {
           try {
-            host.sidebarRight.openTab(KIND)
-            reportGeometry('openSidebar', null, 'ok')
-          } catch (error) {
-            reportGeometry('openSidebar', null, `error: ${String(error?.message ?? error)}`)
+            dockHandle()
+          } catch {
+            // already disposed
           }
+          dockHandle = null
         }
-      }))
+        applied.dockMode = mode
+        if (mode === 'builtin') return
+        try {
+          dockHandle = ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+            name: 'conversation.input.dock',
+            id: 'todo',
+            order: 0,
+            priority: -1,
+            locale: NS,
+          }, (props) => h(SurfaceBoundary, { part: 'dock' }, h(TaskStrip, props))))
+        } catch (error) {
+          reportGeometry('registerFailed', null, `dock: ${String(error?.message ?? error)}`)
+        }
+      }
+      applyDockModeRef.current = applyDockMode
+      const modeListener = (mode) => applyDockMode(mode)
+      dockModeListeners.add(modeListener)
+      ctx.effect(() => () => dockModeListeners.delete(modeListener), 'taskflow: dock mode listener')
+      applyDockMode(readDockMode())
+
+      mark('settings', () => ctx.effect(() => ctx.slots.inject('settings.section', () => ctx.slots.register({
+        name: 'settings.section',
+        id: 'taskflow',
+        order: 55,
+        label: () => t('settings.title'),
+        locale: NS,
+      }, TaskflowSettings)), 'taskflow: settings page'))
+      ctx.effect(() => () => {
+        if (dockHandle) {
+          try {
+            dockHandle()
+          } catch {
+            // ignore
+          }
+          dockHandle = null
+        }
+      }, 'taskflow: dock switch')
 
       // Replace the built-in one-line todo row with the full checklist in the
       // transcript (same key, lower priority shadows the shipped view).
-      mark('todoView', () => ctx.effect(() => ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
-        name: 'tool.call.toolview',
-        key: 'todo_write',
-        priority: -1,
-        locale: NS,
-      }, TodoCardEntry)), 'taskflow: todo card'))
+      mark('todoView', () => ctx.effect(() => ctx.slots.inject('tool.call.toolview', () => {
+        try {
+          return ctx.slots.register({
+            name: 'tool.call.toolview',
+            key: 'todo_write',
+            priority: -1,
+            locale: NS,
+          }, TodoCardEntry)
+        } catch (error) {
+          reportGeometry('registerFailed', null, `todoView: ${String(error?.message ?? error)}`)
+          throw error
+        }
+      }), 'taskflow: todo card'))
 
       startPoller()
+      try {
+        const own = document.querySelector('style[data-plugin-css="dsh-plugin-taskflow"]')
+        applied.builtinTodoPanel = Boolean(document.querySelector('[data-testid="todo-panel"]'))
+        applied.css = own ? (own.dataset.build ?? 'no-build') : 'missing'
+        let rules = []
+        try {
+          rules = own && own.sheet ? Array.from(own.sheet.cssRules) : []
+        } catch {
+          rules = []
+        }
+        applied.cssRules = rules.length
+        applied.hasPauseRule = rules.some((rule) => String(rule.cssText).includes('data-waiting'))
+        applied.hasSpinRule = rules.some((rule) => String(rule.cssText).includes('tf-spin'))
+      } catch {
+        applied.css = 'unknown'
+      }
       reportGeometry('apply', null, JSON.stringify(applied))
 
       ctx.effect(() => () => {

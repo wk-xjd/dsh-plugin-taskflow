@@ -139,13 +139,19 @@ function fakeResponse() {
     status: 0,
     headers: {},
     body: '',
+    written: '',
     writeHead(status, headers) {
       this.status = status
       this.headers = headers
     },
+    write(chunk) {
+      this.written += chunk
+      return true
+    },
     end(text) {
       this.body = text ?? ''
     },
+    on() {},
   }
 }
 
@@ -233,11 +239,11 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
 
   const state = await waitFor(async () => {
     const result = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-1' })
-    return result.json.segments.length > 0 ? result.json : null
+    return result.json.segmentCount > 0 ? result.json : null
   })
 
-  assert.equal(state.segments.length, 1, 'one segment after one turn')
-  const segment = state.segments[0]
+  assert.equal(state.segmentCount, 1, 'one segment after one turn')
+  const segment = state.latestSegment
   assert.equal(segment.turn, 1)
   assert.equal(segment.title, '打通插件壳')
   assert.equal(segment.bullets.length, 2)
@@ -256,7 +262,7 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
   assert.equal(typeof state.tasks.items['读插件 API'].completedAt, 'number')
   assert.equal(state.tasks.items['写宿主插件'].status, 'in_progress')
   assert.equal(typeof state.tasks.items['写宿主插件'].startedAt, 'number')
-  assert.equal(state.tasks.history.length, 1)
+  assert.equal(typeof state.tasks.updatedAt, 'number')
 
   // Per-session state is persisted under DSH_HOME.
   const file = join(home, 'taskflow', 'sess-1.json')
@@ -264,6 +270,47 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
   await waitFor(() => JSON.parse(readFileSync(file, 'utf8')).segments.length === 1)
   const persisted = JSON.parse(readFileSync(file, 'utf8'))
   assert.equal(persisted.segments[0].title, '打通插件壳')
+
+  // The push frame must stay slim: no history, no step bodies.
+  assert.equal(state.segments, undefined, 'full segment array stays off the poll frame')
+  assert.equal(state.tasks.history, undefined, 'history is not shipped')
+  assert.equal(typeof state.segmentCount, 'number')
+  assert.equal(state.latestSegment.title, '打通插件壳')
+  const firstTask = Object.values(state.tasks.items)[0]
+  assert.equal(firstTask.steps, undefined, 'steps are fetched on demand')
+  assert.equal(typeof firstTask.stepCount, 'number')
+
+  // On-demand endpoints.
+  const segs = await callRoute(host, '/taskflow/segments', { url: '/taskflow/segments?session=sess-1' })
+  assert.equal(segs.status, 200)
+  assert.equal(segs.json.segments.length, 1)
+  assert.equal(segs.json.segments[0].title, '打通插件壳')
+
+  const taskName = '读插件 API'
+  const taskRes = await callRoute(host, '/taskflow/task', { url: `/taskflow/task?session=sess-1&content=${encodeURIComponent(taskName)}` })
+  assert.equal(taskRes.status, 200)
+  assert.ok(taskRes.json.item)
+  const missingTask = await callRoute(host, '/taskflow/task', { url: '/taskflow/task?session=sess-1&content=nope' })
+  assert.equal(missingTask.status, 404)
+
+  // The SSE route pushes one initial frame, then closes cleanly.
+  const sseRoute = host.routes.get('/taskflow/events')
+  const sseRequest = fakeRequest('GET', '/taskflow/events?session=sess-1')
+  const closeHandlers = []
+  sseRequest.on = (name, handler) => {
+    if (name === 'close') closeHandlers.push(handler)
+    return sseRequest
+  }
+  const sseResponse = fakeResponse()
+  await sseRoute.handler(sseRequest, sseResponse)
+  assert.equal(sseResponse.status, 200)
+  assert.match(sseResponse.headers['content-type'], /text\/event-stream/)
+  assert.match(sseResponse.written, /^: connected/)
+  assert.match(sseResponse.written, /event: state/)
+  const frame = sseResponse.written.split('data: ')[1].split('\n')[0]
+  const frameJson = JSON.parse(frame)
+  assert.equal(frameJson.segmentCount, 1)
+  for (const close of closeHandlers) close()
 
   // Health route answers and reports client liveness.
   const health = await callRoute(host, '/taskflow/health')
@@ -292,7 +339,7 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
     return result.json.skipped.includes(2) ? result.json : null
   })
   assert.equal(after.lastTurn, 2)
-  assert.equal(after.segments.length, 1)
+  assert.equal(after.segmentCount, 1)
 }
 
 /* ---------------------------------------------------------------------- */
@@ -319,9 +366,9 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
 
   const state = await waitFor(async () => {
     const result = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-2' })
-    return result.json.segments.length > 0 ? result.json : null
+    return result.json.segmentCount > 0 ? result.json : null
   })
-  const segment = state.segments[0]
+  const segment = state.latestSegment
   assert.equal(segment.mechanical, true)
   assert.equal(segment.turn, 7)
   assert.match(segment.title, /修一个崩溃/)
@@ -357,7 +404,7 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
 
   // Automatic path declined it (thresholds are high).
   const before = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-3' })
-  assert.equal(before.json.segments.length, 0)
+  assert.equal(before.json.segmentCount, 0)
   assert.deepEqual(before.json.skipped, [3])
 
   // The slash command forces one.
@@ -368,10 +415,10 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
 
   const after = await waitFor(async () => {
     const response = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-3' })
-    return response.json.segments.length > 0 ? response.json : null
+    return response.json.segmentCount > 0 ? response.json : null
   })
-  assert.equal(after.segments[0].title, '手动一段')
-  assert.deepEqual(after.segments[0].bullets, ['手动触发成功'])
+  assert.equal(after.latestSegment.title, '手动一段')
+  assert.deepEqual(after.latestSegment.bullets, ['手动触发成功'])
   assert.deepEqual(after.skipped, [])
 
   // The HTTP manual route reports "nothing to summarize" once a segment exists.
@@ -418,9 +465,9 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
 
   const state = await waitFor(async () => {
     const result = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-4' })
-    return result.json.segments.length > 0 ? result.json : null
+    return result.json.segmentCount > 0 ? result.json : null
   })
-  const segment = state.segments[0]
+  const segment = state.latestSegment
   assert.equal(segment.turn, 5)
   assert.match(segment.title, /修复空指针/, 'the user request survives a mid-turn mount')
   assert.equal(segment.toolCalls, 2)
@@ -436,7 +483,7 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
     const result = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-4' })
     return result.json.skipped.includes(6) ? result.json : null
   })
-  assert.equal(after.segments.length, 1, 'an aborted turn produces no segment')
+  assert.equal(after.segmentCount, 1, 'an aborted turn produces no segment')
   assert.equal(after.lastTurn, 6)
 }
 

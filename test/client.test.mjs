@@ -36,7 +36,21 @@ function element(type, props, ...children) {
   return { type, props: { ...(props || {}), children: flat.length === 1 ? flat[0] : flat } }
 }
 
+class ShimComponent {
+  constructor(props) {
+    this.props = props
+    this.state = this.state || {}
+  }
+
+  setState(next) {
+    const patch = typeof next === 'function' ? next(this.state, this.props) : next
+    this.state = { ...this.state, ...patch }
+  }
+}
+ShimComponent.prototype.isReactComponent = {}
+
 const reactShim = {
+  Component: ShimComponent,
   createElement: element,
   Fragment: Symbol('Fragment'),
   useState(initial) {
@@ -72,13 +86,18 @@ const windowFake = {
     return intervals
   },
   clearInterval() {},
-  setTimeout(fn) {
+  setTimeout(fn, ms) {
+    // The poll loop reschedules itself with long delays; running it here would
+    // keep the test process alive forever.
+    if (typeof ms === 'number' && ms >= 500) return 0
     return setTimeout(fn, 0)
   },
 }
 
 const documentFake = {
   visibilityState: 'visible',
+  addEventListener() {},
+  removeEventListener() {},
   querySelector() {
     return null
   },
@@ -93,7 +112,8 @@ const payload = {
   version: '0.1.0',
   sessionId: 'sess-1',
   enabled: true,
-  segments: [{
+  segmentCount: 1,
+  latestSegment: {
     turn: 1,
     at: 1,
     startedAt: 0,
@@ -106,7 +126,7 @@ const payload = {
     provider: 'test-provider',
     model: 'test-model',
     mechanical: false,
-  }],
+  },
   tasks: {
     items: {
       '读插件 API': { content: '读插件 API', status: 'completed', firstSeen: 1, startedAt: 1, completedAt: 2000 },
@@ -116,6 +136,7 @@ const payload = {
     updatedAt: 1700,
   },
   lastTurn: 2,
+  openTurn: 1,
   skipped: [2],
   pending: false,
   updatedAt: 5000,
@@ -124,6 +145,10 @@ const payload = {
 const requests = []
 const fetchFake = async (url, options = {}) => {
   requests.push({ url, options })
+  if (String(url).includes('planning-session')) {
+    // A turn that has started but produced no list yet.
+    return { ok: true, status: 200, json: async () => ({ ...payload, sessionId: 'planning-session', segmentCount: 0, latestSegment: null, openTurn: 9, lastTurn: 8 }) }
+  }
   if (String(url).startsWith('/taskflow/summarize')) {
     return { ok: true, status: 200, json: async () => ({ ok: true, queued: true }) }
   }
@@ -207,9 +232,18 @@ moduleExports.apply(ctx)
 
 const dock = registrations.find((entry) => entry.options.name === 'conversation.input.dock')
 assert.ok(dock, 'dock slot registered')
-assert.equal(dock.options.id, 'todo', 'replaces the shipped todo dock cell')
-assert.equal(dock.options.order, 0)
-assert.equal(dock.options.priority, -1, 'lower priority shadows the built-in panel')
+// Default mode ('custom') shadows the shipped panel; the settings page can
+// switch to 'builtin', which leaves the shipped panel alone.
+assert.equal(dock.options.id, 'todo', 'default mode takes the shipped cell')
+assert.equal(dock.options.priority, -1)
+
+const settingsSection = registrations.find((entry) => entry.options.name === 'settings.section')
+assert.ok(settingsSection, 'settings page registered')
+assert.equal(settingsSection.options.id, 'taskflow')
+
+const settingsText = textOf(render(settingsSection.component, {}))
+assert.match(settingsText, /TaskFlow 面板/, 'settings offers our panel')
+assert.match(settingsText, /DSH 内置面板/, 'settings offers the built-in panel')
 
 
 /* ---------------------------------------------------------------------- */
@@ -220,7 +254,14 @@ function textOf(node) {
   if (node === null || node === undefined || node === false) return ''
   if (typeof node === 'string' || typeof node === 'number') return String(node)
   if (Array.isArray(node)) return node.map(textOf).join('')
-  if (node.type && typeof node.type === 'function') return textOf(node.type(node.props))
+  if (node.type && typeof node.type === 'function') {
+    if (node.type.prototype && node.type.prototype.isReactComponent) {
+      const instance = new node.type(node.props)
+      instance.props = node.props
+      return textOf(instance.render())
+    }
+    return textOf(node.type(node.props))
+  }
   return textOf(node.props?.children)
 }
 
@@ -277,6 +318,16 @@ const openCard = textOf(render(todoView.component, {
   block: blockWith([{ content: '读文件', status: 'completed' }, { content: '写结论', status: 'in_progress' }]),
 }))
 assert.match(openCard, /写结论/, 'a running list stays open')
+
+// While a turn is open with no list yet, the dock announces planning instead of
+// staying empty until the first todo_write lands.
+textOf(render(dock.component, { sessionId: 'planning-session', useProjection: () => null }))
+await new Promise((resolve) => setTimeout(resolve, 20))
+const planningText = textOf(render(dock.component, {
+  sessionId: 'planning-session',
+  useProjection: () => null,
+}))
+assert.match(planningText, /正在拆解任务/, `planning placeholder, got: ${planningText}`)
 
 // The strip fetched the host at least once.
 assert.ok(requests.some((request) => String(request.url).startsWith('/taskflow/state?session=sess-1')))
