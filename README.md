@@ -14,6 +14,9 @@
 # 从 npm 安装
 dsh plugin --profile web add dsh-plugin-taskflow
 
+# 若包管理器因「新版本发布冷却期」装到了 0.1.0（无 dsh.bundle 的旧版），显式指定：
+dsh plugin --profile web add dsh-plugin-taskflow@0.1.1
+
 # 或直接从 GitHub 源码安装
 dsh plugin --profile web add github:wk-xjd/dsh-plugin-taskflow
 ```
