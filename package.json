@@ -1,0 +1,51 @@
+{
+  "name": "dsh-plugin-taskflow",
+  "version": "0.1.0",
+  "description": "TaskFlow for DeepSeek Harness — a liquid-glass task list above the composer that folds finished rounds into the transcript, with a one-line summary per task and per-turn segment digests.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./client/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  },
+  "license": "MIT",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "task-list",
+    "todo",
+    "summary",
+    "plugin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wk-xjd/dsh-plugin-taskflow.git"
+  },
+  "homepage": "https://github.com/wk-xjd/dsh-plugin-taskflow#readme",
+  "bugs": {
+    "url": "https://github.com/wk-xjd/dsh-plugin-taskflow/issues"
+  },
+  "author": "kkt",
+  "engines": {
+    "node": ">=22"
+  }
+}
