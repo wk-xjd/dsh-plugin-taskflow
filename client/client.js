@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c99'
+    const CLIENT_BUILD = 'c102'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -206,7 +206,7 @@ window.__ModuleLoader__.load({
 .tf-chevron { transition: transform .18s ease; }
 .tf-inline-toggle[data-collapsed="true"] .tf-chevron { transform: rotate(-90deg); }
 .tf-inline-toggle:hover { opacity: .8; }
-.tf-inline-list { margin: 4px 0 0; padding: 0 0 0 1px; list-style: none; display: flex; flex-direction: column; gap: 4px; max-height: 172px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: color-mix(in oklab, currentColor 16%, transparent) transparent; }
+.tf-inline-list { margin: 4px 0 0; padding: 0 0 0 1px; list-style: none; display: flex; flex-direction: column; gap: 4px; max-height: 248px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-gutter: stable; scrollbar-color: color-mix(in oklab, currentColor 16%, transparent) transparent; }
 .tf-inline-list::-webkit-scrollbar { width: 6px; height: 0; }
 .tf-inline-list::-webkit-scrollbar-track { background: transparent; }
 .tf-inline-list::-webkit-scrollbar-thumb { background: color-mix(in oklab, currentColor 14%, transparent); border-radius: 3px; }
@@ -234,6 +234,9 @@ window.__ModuleLoader__.load({
 .tf-item-parallel { opacity: .5; font-variant-numeric: tabular-nums; }
 .tf-item-time { flex: 0 0 auto; opacity: .3; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.6; }
 .tf-item-hint { flex: 0 0 auto; font-size: 11px; opacity: .26; }
+.tf-inline-list::-webkit-scrollbar { width: 6px; }
+.tf-inline-list::-webkit-scrollbar-thumb { background: color-mix(in oklab, currentColor 24%, transparent); border-radius: 3px; }
+.tf-inline-list::-webkit-scrollbar-track { background: transparent; }
 .tf-item-more .tf-item-btn { opacity: .45; font-size: 10.5px; justify-content: center; }
 .tf-item-more .tf-item-btn:hover { opacity: .8; }
 .tf-item-caret { flex: 0 0 auto; font-size: 12px; opacity: .35; }
@@ -916,6 +919,9 @@ window.__ModuleLoader__.load({
 
 
 
+
+
+
       useReportGeometry('detail', detailRef, detail ? detail.content : 'closed')
 
       // Open one task's detail; the anchor is the row that was clicked.
@@ -1012,11 +1018,10 @@ window.__ModuleLoader__.load({
       }
 
       const merged = mergeTasks(list, snapshot, Date.now())
-      const finished = merged.filter((todo) => todo.status === 'completed')
-      const hiddenDone = showAllDone ? 0 : Math.max(0, finished.length - 3)
-      const visible = hiddenDone === 0
-        ? merged
-        : merged.filter((todo) => todo.status !== 'completed' || finished.indexOf(todo) >= hiddenDone)
+      // Show every row; the list scrolls (with a visible scrollbar) instead of
+      // hiding finished work behind a disclosure the user has to discover.
+      const visible = merged
+      const hiddenDone = 0
       const moreRow = hiddenDone > 0
         ? h('li', { key: '__more', className: 'tf-item tf-item-more' },
           h('button', {
