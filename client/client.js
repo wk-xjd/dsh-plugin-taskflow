@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c98'
+    const CLIENT_BUILD = 'c99'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -802,14 +802,12 @@ window.__ModuleLoader__.load({
       const snapshot = useSnapshot(sessionId)
       const todos = props.useProjection ? props.useProjection('todos') : undefined
       const projectionList = currentTodos(todos)
-      // Compatibility fallback: if the shipped `todos` projection is missing (or
-      // renamed in a future DSH), the host's own list for the running turn keeps
-      // the panel working.
-      const hostList = snapshot.currentListTurn !== null
-        && snapshot.currentListTurn !== undefined
-        && snapshot.currentListTurn === snapshot.openTurn
-        ? (snapshot.currentList || [])
-        : []
+      // Compatibility fallback: the shipped `todos` projection is empty for
+      // sessions this window has not opened yet (and would be missing entirely
+      // if DSH ever renames it). The host keeps the last list it saw, and clears
+      // it when a new turn starts, so switching conversations never blanks the
+      // panel.
+      const hostList = Array.isArray(snapshot.currentList) ? snapshot.currentList : []
       const list = projectionList.length > 0 ? projectionList : hostList
       const [collapsed, setCollapsed] = React.useState(props.compact === true)
       const [showAllDone, setShowAllDone] = React.useState(false)
