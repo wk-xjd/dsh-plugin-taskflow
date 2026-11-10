@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c96'
+    const CLIENT_BUILD = 'c98'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -206,13 +206,13 @@ window.__ModuleLoader__.load({
 .tf-chevron { transition: transform .18s ease; }
 .tf-inline-toggle[data-collapsed="true"] .tf-chevron { transform: rotate(-90deg); }
 .tf-inline-toggle:hover { opacity: .8; }
-.tf-inline-list { margin: 4px 0 0; padding: 0 0 0 1px; list-style: none; display: flex; flex-direction: column; gap: 0; max-height: 150px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: color-mix(in oklab, currentColor 16%, transparent) transparent; }
+.tf-inline-list { margin: 4px 0 0; padding: 0 0 0 1px; list-style: none; display: flex; flex-direction: column; gap: 4px; max-height: 172px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: color-mix(in oklab, currentColor 16%, transparent) transparent; }
 .tf-inline-list::-webkit-scrollbar { width: 6px; height: 0; }
 .tf-inline-list::-webkit-scrollbar-track { background: transparent; }
 .tf-inline-list::-webkit-scrollbar-thumb { background: color-mix(in oklab, currentColor 14%, transparent); border-radius: 3px; }
 .tf-inline-list::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, currentColor 26%, transparent); }
 .tf-item { list-style: none; }
-.tf-item-btn { position: relative; display: flex; align-items: flex-start; gap: 9px; width: 100%; box-sizing: border-box; padding: 5px 6px; border: 0; border-radius: 11px; background: transparent; color: inherit; font: inherit; font-size: 12.5px; line-height: 1.6; text-align: left; cursor: pointer; }
+.tf-item-btn { position: relative; display: flex; align-items: flex-start; gap: 9px; width: 100%; box-sizing: border-box; padding: 6px 7px; border: 0; border-radius: 11px; background: transparent; color: inherit; font: inherit; font-size: 12.5px; line-height: 1.6; text-align: left; cursor: pointer; }
 .tf-item-btn:hover, .tf-item-btn[data-active="true"] { background: color-mix(in oklab, currentColor 7%, transparent); }
 .tf-item-btn[data-delegated="true"] { background: color-mix(in oklab, #8b7cff 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, #8b7cff 24%, transparent); }
 .tf-inline-head[data-state="delegated"] .tf-inline-current { color: #a99bff; opacity: .95; }
