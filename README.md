@@ -4,12 +4,14 @@
 >
 > A task list and per-turn digest plugin for DeepSeek Harness: a liquid-glass task panel above the composer, a one-line model-written summary per task, and a condensed digest for every finished turn.
 
+[![npm version](https://img.shields.io/npm/v/dsh-plugin-taskflow.svg)](https://www.npmjs.com/package/dsh-plugin-taskflow)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)
 
 ## 安装
 
 ```bash
-# 从 npm 安装（发布后）
+# 从 npm 安装
 dsh plugin --profile web add dsh-plugin-taskflow
 
 # 或直接从 GitHub 源码安装
