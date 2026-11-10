@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-taskflow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TaskFlow for DeepSeek Harness — a liquid-glass task list above the composer that folds finished rounds into the transcript, with a one-line summary per task and per-turn segment digests.",
   "type": "module",
   "main": "lib/index.js",
@@ -18,6 +18,9 @@
     "LICENSE"
   ],
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "inject": [

@@ -1,8 +1,8 @@
-# TaskFlow bundle patch — only used when this package is installed as a DSH
-# "bundle" (a dependency listed in a profile's `dsh.profile.bundles`).
+# TaskFlow bundle patch: one inserted plugin row.
 #
-# A single out-of-tree plugin does not need that: insert one row in the
-# profile's own `cordis.patch.yml` instead (see README).
+# Installed as a profile bundle (`dsh plugin --profile web add dsh-plugin-taskflow`),
+# this layer inserts the plugin into the profile's loader graph. Manual installs
+# can instead copy this `insert` block into the profile's own cordis.patch.yml.
 - insert:
     - id: dsh-plugin-taskflow
       name: 'dsh-plugin-taskflow'

@@ -18,6 +18,9 @@ dsh plugin --profile web add dsh-plugin-taskflow
 dsh plugin --profile web add github:wk-xjd/dsh-plugin-taskflow
 ```
 
+`dsh plugin add` 会把本包装成一个 **profile bundle**（自动写入 `dsh.profile.bundles` 并加载
+`cordis.patch.yml`），无需手工编辑 patch 文件。
+
 安装后**刷新页面**（桌面客户端：开发者工具里执行 `location.reload()`，或重启 App）；
 宿主半部更新需重启一次 App。
 
@@ -66,14 +69,22 @@ node install.mjs --profile web   # 装到别的 profile
 
 ## 安装细节
 
-本插件是**树外单插件**：不进 `dsh.profile.bundles`，只在目标 profile 的 `cordis.patch.yml` 里插一行
-（`dsh plugin add` 会自动完成这件事）。
+本包同时是一个 **DSH bundle**：`package.json` 里声明 `dsh.bundle.patch = ./cordis.patch.yml`，
+`dsh plugin --profile <p> add dsh-plugin-taskflow` 会把它写进该 profile 的 `dsh.profile.bundles`：
+
+```json
+{"profile": {"bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "dsh-plugin-taskflow"]}}
+```
+
+bundle 里的 patch 只有一行 insert：
 
 ```yaml
 - insert:
     - id: dsh-plugin-taskflow
       name: 'dsh-plugin-taskflow'
 ```
+
+从源码手动安装（不想走 npm 时）也可以用 `install.mjs` 直接改 profile 的 `cordis.patch.yml`。
 
 ### 生效方式
 
