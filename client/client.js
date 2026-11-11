@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c107'
+    const CLIENT_BUILD = 'c108'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -53,6 +53,8 @@ window.__ModuleLoader__.load({
       'panel.empty': '还没有小结。完成一段工作后会自动生成，也可以点下方按钮手动整理。',
       'panel.emptySession': '本会话暂无任务清单',
       'panel.planning': '正在拆解任务…',
+      'panel.planningTail': '本轮开始时自动拆解',
+      'panel.emptyTail': '发消息后自动拆解',
       'panel.noTasks': '本会话还没有任务列表（agent 使用 todo_write 后出现）。',
       'panel.summarize': '整理最近一段',
       'panel.summarizing': '正在整理…',
@@ -111,6 +113,8 @@ window.__ModuleLoader__.load({
       'panel.empty': 'No summaries yet. One is generated when a segment of work ends, or press the button below.',
       'panel.emptySession': 'No task list in this session yet',
       'panel.planning': 'Planning tasks…',
+      'panel.planningTail': 'decomposes automatically',
+      'panel.emptyTail': 'decomposes on your next message',
       'panel.noTasks': 'This session has no task list yet (it appears once the agent calls todo_write).',
       'panel.summarize': 'Summarize the last segment',
       'panel.summarizing': 'Summarizing…',
@@ -197,15 +201,26 @@ window.__ModuleLoader__.load({
 /* Idle state: a slow light sweep across the label plus a diffuse bloom behind
    it, so an empty conversation still feels alive without stealing attention. */
 .tf-inline-empty .tf-inline-current {
-  /* Soft breathing + a diffuse halo. Deliberately no background-clip text:
-     the gradient resolved against a transparent colour and the label vanished. */
-  color: inherit;
+  /* Fallback colour first: the gradient only takes over where text clipping is
+     actually supported, and it is built from fixed colours (never currentColor,
+     which would inherit the transparent text colour). */
+  color: color-mix(in oklab, currentColor 62%, transparent);
   animation: tf-glide 4.6s ease-in-out infinite;
 }
-@keyframes tf-glide {
-  0%, 100% { opacity: .46; text-shadow: 0 0 0 rgba(0, 0, 0, 0); }
-  50% { opacity: .88; text-shadow: 0 0 10px rgba(150, 180, 255, .38), 0 0 22px rgba(150, 180, 255, .18); }
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .tf-inline-empty .tf-inline-current {
+    background-image: linear-gradient(100deg, #7fb2ff 0%, #cf9dff 34%, #7ff0e0 62%, #8fa8ff 84%, #7fb2ff 100%);
+    background-size: 260% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: tf-sheen 6s linear infinite, tf-glide 4.6s ease-in-out infinite;
+  }
 }
+.tf-orbit { position: relative; flex: 0 0 auto; width: 13px; height: 13px; border-radius: 50%; border: 1px solid color-mix(in oklab, currentColor 18%, transparent); animation: tf-rotate 5.5s linear infinite; }
+.tf-orbit::after { content: ''; position: absolute; top: -2px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: #8fb6ff; box-shadow: 0 0 6px rgba(143, 182, 255, .9); }
+@keyframes tf-rotate { to { transform: rotate(360deg); } }
+.tf-inline-empty .tf-inline-hint-tail { margin-left: auto; opacity: .26; font-size: 10.5px; letter-spacing: .02em; }
 .tf-inline-empty::after {
   content: '';
   position: absolute;
@@ -1015,10 +1030,12 @@ window.__ModuleLoader__.load({
           h('div', { className: 'tf-inline tf-inline-empty' },
             h('div', { className: 'tf-inline-head' },
               turnOpen
-                ? h('span', { className: 'tf-dot', 'aria-hidden': true })
-                : h('span', { className: 'tf-empty-dot', 'aria-hidden': true }, '◌'),
+                ? h('span', { className: 'tf-orbit', 'aria-hidden': true })
+                : h('span', { className: 'tf-orbit', 'aria-hidden': true }),
               h('span', { className: 'tf-inline-current' },
-                turnOpen ? t('panel.planning') : t('panel.emptySession')))))
+                turnOpen ? t('panel.planning') : t('panel.emptySession')),
+              h('span', { className: 'tf-inline-hint-tail' },
+                turnOpen ? t('panel.planningTail') : t('panel.emptyTail')))))
       }
 
       // No task list: fall back to the one-line summary pill (click -> sidebar).
