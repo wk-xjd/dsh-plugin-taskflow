@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c103'
+    const CLIENT_BUILD = 'c105'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -221,8 +221,8 @@ window.__ModuleLoader__.load({
 .tf-item-btn[data-waiting="true"] .tf-item-mark { color: #d2a24c; opacity: .9; }
 .tf-inline-head[data-state="waiting"] .tf-inline-current { color: #d2a24c; opacity: .9; }
 .tf-item-btn[data-status="in_progress"]:not([data-waiting="true"]) { background: color-mix(in oklab, #6aa6ff 9%, transparent); box-shadow: 0 0 16px rgba(110, 160, 255, .16), inset 0 0 14px rgba(110, 160, 255, .10); }
-.tf-item-btn[data-status="in_progress"]:not([data-waiting="true"])::before { content: ''; position: absolute; inset: 0; border-radius: 11px; padding: 2px; background: conic-gradient(from var(--tf-angle, 0deg), #ff6b6b, #ffd166, #6bcb77, #4d96ff, #b983ff, #ff6b6b); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; opacity: .95; animation: tf-spin 2.4s linear infinite; pointer-events: none; }
-.tf-item-btn[data-status="in_progress"]:not([data-waiting="true"])::after { content: ''; position: absolute; inset: 0; border-radius: 11px; pointer-events: none; background: radial-gradient(130% 160% at 12% 0%, rgba(255, 110, 110, .20), transparent 46%), radial-gradient(130% 160% at 50% 0%, rgba(255, 210, 100, .16), transparent 46%), radial-gradient(130% 160% at 88% 0%, rgba(90, 160, 255, .22), transparent 52%); filter: blur(8px); opacity: .8; animation: tf-glow 2.4s ease-in-out infinite; }
+.tf-item-btn[data-status="in_progress"]:not([data-waiting="true"])::before { content: ''; position: absolute; inset: 0; border-radius: 11px; padding: 1px; background: conic-gradient(from var(--tf-angle, 0deg), #ff6b6b, #ffd166, #6bcb77, #4d96ff, #b983ff, #ff6b6b); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; opacity: .95; animation: tf-spin 2.4s linear infinite; pointer-events: none; }
+.tf-item-btn[data-status="in_progress"]:not([data-waiting="true"])::after { content: ''; position: absolute; inset: 0; border-radius: 11px; pointer-events: none; background: radial-gradient(130% 160% at 12% 0%, rgba(255, 110, 110, .20), transparent 46%), radial-gradient(130% 160% at 50% 0%, rgba(255, 210, 100, .16), transparent 46%), radial-gradient(130% 160% at 88% 0%, rgba(90, 160, 255, .22), transparent 52%); filter: blur(8px); opacity: .55; animation: tf-glow 2.4s ease-in-out infinite; }
 .tf-item-mark { flex: 0 0 auto; width: 14px; text-align: center; font-size: 12px; line-height: 1.6; }
 .tf-item-btn[data-status="completed"] .tf-item-mark { color: #3fb950; }
 .tf-item-btn[data-status="completed"] .tf-item-text { opacity: .52; }
@@ -812,6 +812,9 @@ window.__ModuleLoader__.load({
       // panel.
       const hostList = Array.isArray(snapshot.currentList) ? snapshot.currentList : []
       const list = projectionList.length > 0 ? projectionList : hostList
+      // Re-render every second while something runs, so the timer advances even
+      // when no state frame arrives.
+      const now = useNow(list.some((todo) => todo.status === 'in_progress'))
       const [collapsed, setCollapsed] = React.useState(props.compact === true)
       const [showAllDone, setShowAllDone] = React.useState(false)
       const [detail, setDetailState] = React.useState(uiState.detail)
@@ -1017,7 +1020,7 @@ window.__ModuleLoader__.load({
             h('span', { className: 'tf-pill-text' }, clip(latest.title || '', 20)))))
       }
 
-      const merged = mergeTasks(list, snapshot, Date.now())
+      const merged = mergeTasks(list, snapshot, now)
       // Show every row; the list scrolls (with a visible scrollbar) instead of
       // hiding finished work behind a disclosure the user has to discover.
       const visible = merged
@@ -1058,11 +1061,19 @@ window.__ModuleLoader__.load({
               type: 'button',
               className: 'tf-item-btn',
               'data-status': todo.status,
+              'data-waiting': waiting && todo.status === 'in_progress' ? 'true' : 'false',
+              'data-delegated': delegated && todo.status === 'in_progress' ? 'true' : 'false',
               'data-active': detail && detail.content === todo.content ? 'true' : 'false',
               title: summary,
               onClick: (event) => openDetail(todo.content, event.currentTarget),
             }, body)
-            : h('div', { className: 'tf-item-btn', 'data-status': todo.status, 'data-static': 'true' }, body))
+            : h('div', {
+              className: 'tf-item-btn',
+              'data-status': todo.status,
+              'data-waiting': waiting && todo.status === 'in_progress' ? 'true' : 'false',
+              'data-delegated': delegated && todo.status === 'in_progress' ? 'true' : 'false',
+              'data-static': 'true',
+            }, body))
       })
 
       const detailTiming = detail
@@ -1209,7 +1220,7 @@ window.__ModuleLoader__.load({
       const allDone = todos.length > 0 && done === todos.length
       // Finished rounds collapse to one line inside that round's transcript;
       // the live list stays open while work is still running.
-      const [open, setOpen] = React.useState(!allDone)
+      const [open, setOpen] = React.useState(true)
       useReportGeometry('taskcard', rootRef, `${todos.length} items ${open ? 'open' : 'folded'}`)
 
       // A call still streaming its arguments renders nothing, so the transcript

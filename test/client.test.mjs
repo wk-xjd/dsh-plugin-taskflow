@@ -312,7 +312,8 @@ const folded = textOf(render(todoView.component, {
   block: blockWith([{ content: '读文件', status: 'completed' }, { content: '写结论', status: 'completed' }]),
 }))
 assert.match(folded, /2 个任务/, 'folded card keeps the counts')
-assert.ok(!folded.includes('写结论'), `folded card hides rows, got: ${folded}`)
+// Finished cards no longer collapse: the rows stay visible.
+assert.ok(folded.includes('写结论'), `finished card keeps its rows, got: ${folded}`)
 
 const openCard = textOf(render(todoView.component, {
   block: blockWith([{ content: '读文件', status: 'completed' }, { content: '写结论', status: 'in_progress' }]),
