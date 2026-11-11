@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c102'
+    const CLIENT_BUILD = 'c103'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -36,8 +36,8 @@ window.__ModuleLoader__.load({
       'status.in_progress': '进行中',
       'status.completed': '已完成',
       'status.allDone': '全部完成',
-      'status.waiting': '等待确认',
-      'status.waitingHint': '本轮结束，等你确认后继续',
+      'status.waiting': '未收尾',
+      'status.waitingHint': '本轮已结束，该任务没有标记完成',
       'status.delegated': '子 agent 执行中',
       'card.pending': '正在整理本段小结…',
       'card.turn': '第 {turn} 段',
@@ -94,8 +94,8 @@ window.__ModuleLoader__.load({
       'status.in_progress': 'in progress',
       'status.completed': 'done',
       'status.allDone': 'all done',
-      'status.waiting': 'waiting',
-      'status.waitingHint': 'turn ended; waiting for you',
+      'status.waiting': 'unfinished',
+      'status.waitingHint': 'turn ended without closing this task',
       'status.delegated': 'subagent working',
       'card.pending': 'Summarizing this segment…',
       'card.turn': 'Segment {turn}',
