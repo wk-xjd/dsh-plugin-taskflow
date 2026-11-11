@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c108'
+    const CLIENT_BUILD = 'c109'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -1262,9 +1262,15 @@ window.__ModuleLoader__.load({
       const rootRef = React.useRef(null)
       const done = todos.filter((todo) => todo.status === 'completed').length
       const allDone = todos.length > 0 && done === todos.length
-      // Finished rounds collapse to one line inside that round's transcript;
-      // the live list stays open while work is still running.
-      const [open, setOpen] = React.useState(true)
+      // When the composer panel is already showing this exact list, the card in
+      // the transcript folds to one line instead of printing it twice.
+      const snapshot = useSnapshot(props.sessionId)
+      const liveList = Array.isArray(snapshot.currentList) ? snapshot.currentList : []
+      const mirror = liveList.length > 0
+        && liveList.length === todos.length
+        && liveList.every((entry, index) => entry.content === todos[index]?.content && entry.status === todos[index]?.status)
+      const [userOpen, setUserOpen] = React.useState(null)
+      const open = userOpen === null ? !mirror : userOpen
       useReportGeometry('taskcard', rootRef, `${todos.length} items ${open ? 'open' : 'folded'}`)
 
       // A call still streaming its arguments renders nothing, so the transcript
@@ -1276,7 +1282,7 @@ window.__ModuleLoader__.load({
           type: 'button',
           className: 'tf-tasks-head',
           'aria-expanded': open,
-          onClick: () => setOpen((value) => !value),
+          onClick: () => setUserOpen((value) => !(value === null ? open : value)),
         },
         h('span', { className: 'tf-tasks-caret', 'aria-hidden': true }, open ? '▾' : '▸'),
         h('span', null, t('tasks.header', { total: todos.length, done, open: todos.length - done }))),
