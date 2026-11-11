@@ -260,7 +260,25 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
   // Task timings came from the todo/write snapshot.
   assert.equal(state.tasks.items['读插件 API'].status, 'completed')
   assert.equal(typeof state.tasks.items['读插件 API'].completedAt, 'number')
-  assert.equal(state.tasks.items['写宿主插件'].status, 'in_progress')
+  // The turn ended normally, so an item the model forgot to flip is closed and
+  // marked as auto-closed rather than left spinning.
+  assert.equal(state.tasks.items['写宿主插件'].status, 'completed')
+  assert.equal(state.tasks.items['写宿主插件'].autoClosed, true)
+
+  // An interrupted turn is the opposite: the item stays open and frozen.
+  session.append('turn/start', { turn: 2 })
+  session.append('todo/write', {
+    todos: [
+      { content: '读插件 API', status: 'completed' },
+      { content: '写宿主插件', status: 'completed' },
+      { content: '补客户端面板', status: 'in_progress' },
+    ],
+  })
+  session.append('turn/end', { turn: 2, reason: { kind: 'interrupted' } })
+  for (const event of session.events.slice(-3)) host.emit('session/event', session, event)
+  const interrupted = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-1' })
+  assert.equal(interrupted.json.tasks.items['补客户端面板'].status, 'in_progress')
+  assert.equal(typeof interrupted.json.tasks.items['补客户端面板'].pausedAt, 'number', 'frozen for the human')
   assert.equal(typeof state.tasks.items['写宿主插件'].startedAt, 'number')
   assert.equal(typeof state.tasks.updatedAt, 'number')
 
