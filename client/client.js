@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c105'
+    const CLIENT_BUILD = 'c106'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -192,8 +192,36 @@ window.__ModuleLoader__.load({
 @keyframes tf-spin { to { --tf-angle: 360deg; } }
 @keyframes tf-pulse { 0%, 100% { transform: scale(.85); opacity: .7; } 50% { transform: scale(1.12); opacity: 1; } }
 @keyframes tf-glow { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
-.tf-inline-empty { padding: 5px 10px; }
-.tf-inline-empty .tf-inline-head { opacity: .42; font-size: 10.5px; }
+.tf-inline-empty { position: relative; overflow: hidden; padding: 7px 12px; }
+.tf-inline-empty .tf-inline-head { opacity: .5; font-size: 11px; }
+/* Idle state: a slow light sweep across the label plus a diffuse bloom behind
+   it, so an empty conversation still feels alive without stealing attention. */
+.tf-inline-empty .tf-inline-current {
+  background: linear-gradient(100deg,
+    color-mix(in oklab, currentColor 30%, transparent) 0%,
+    color-mix(in oklab, currentColor 78%, transparent) 42%,
+    color-mix(in oklab, currentColor 30%, transparent) 78%);
+  background-size: 240% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: tf-sheen 4.2s ease-in-out infinite;
+}
+.tf-inline-empty::after {
+  content: '';
+  position: absolute;
+  inset: -40% -10%;
+  pointer-events: none;
+  background: radial-gradient(42% 120% at 22% 50%, rgba(150, 180, 255, .16), transparent 70%),
+              radial-gradient(38% 120% at 62% 50%, rgba(190, 150, 255, .10), transparent 72%);
+  filter: blur(14px);
+  opacity: .55;
+  animation: tf-bloom 7s ease-in-out infinite;
+}
+@keyframes tf-sheen { 0% { background-position: 130% 50%; } 50% { background-position: -30% 50%; } 100% { background-position: 130% 50%; } }
+@keyframes tf-bloom { 0%, 100% { opacity: .32; transform: translateX(-2%); } 50% { opacity: .72; transform: translateX(3%); } }
+.tf-inline-empty .tf-empty-dot { animation: tf-breathe 3.6s ease-in-out infinite; }
+@keyframes tf-breathe { 0%, 100% { opacity: .35; } 50% { opacity: .9; } }
 .tf-empty-dot { flex: 0 0 auto; font-size: 10px; opacity: .7; }
 .tf-inline-head { display: flex; align-items: center; gap: 10px; padding: 1px 0 3px; font-size: 12px; letter-spacing: .01em; transition: color .3s ease; }
 .tf-inline-head[data-state="done"] { color: #4ec97a; }
