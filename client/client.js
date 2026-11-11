@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c106'
+    const CLIENT_BUILD = 'c107'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -197,15 +197,14 @@ window.__ModuleLoader__.load({
 /* Idle state: a slow light sweep across the label plus a diffuse bloom behind
    it, so an empty conversation still feels alive without stealing attention. */
 .tf-inline-empty .tf-inline-current {
-  background: linear-gradient(100deg,
-    color-mix(in oklab, currentColor 30%, transparent) 0%,
-    color-mix(in oklab, currentColor 78%, transparent) 42%,
-    color-mix(in oklab, currentColor 30%, transparent) 78%);
-  background-size: 240% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: tf-sheen 4.2s ease-in-out infinite;
+  /* Soft breathing + a diffuse halo. Deliberately no background-clip text:
+     the gradient resolved against a transparent colour and the label vanished. */
+  color: inherit;
+  animation: tf-glide 4.6s ease-in-out infinite;
+}
+@keyframes tf-glide {
+  0%, 100% { opacity: .46; text-shadow: 0 0 0 rgba(0, 0, 0, 0); }
+  50% { opacity: .88; text-shadow: 0 0 10px rgba(150, 180, 255, .38), 0 0 22px rgba(150, 180, 255, .18); }
 }
 .tf-inline-empty::after {
   content: '';
@@ -1525,6 +1524,8 @@ window.__ModuleLoader__.load({
           rules = []
         }
         applied.cssRules = rules.length
+        const emptyLabel = document.querySelector('.tf-inline-empty .tf-inline-current')
+        applied.emptyLabel = emptyLabel ? `${getComputedStyle(emptyLabel).color}|opacity:${getComputedStyle(emptyLabel).opacity}` : 'none'
         applied.hasPauseRule = rules.some((rule) => String(rule.cssText).includes('data-waiting'))
         applied.hasSpinRule = rules.some((rule) => String(rule.cssText).includes('tf-spin'))
       } catch {
