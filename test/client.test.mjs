@@ -149,6 +149,26 @@ const fetchFake = async (url, options = {}) => {
     // A turn that has started but produced no list yet.
     return { ok: true, status: 200, json: async () => ({ ...payload, sessionId: 'planning-session', segmentCount: 0, latestSegment: null, openTurn: 9, lastTurn: 8 }) }
   }
+  if (String(url).includes('idle-plan-session')) {
+    // Between turns the last plan stays visible; say how much is left instead of
+    // leaving the header at a bare "0/2".
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...payload,
+        sessionId: 'idle-plan-session',
+        openTurn: null,
+        inTurn: false,
+        delegates: 0,
+        currentList: [
+          { content: '写单元测试', status: 'pending' },
+          { content: '跑回归', status: 'pending' },
+        ],
+        tasks: { items: {}, updatedAt: 1700 },
+      }),
+    }
+  }
   if (String(url).includes('delegated-open-session')) {
     // The main turn is running and three subagents work under it: the header
     // must keep naming the main task, with the subagent count beside it.
@@ -449,6 +469,18 @@ assert.match(autoclosedText, /2\/2/, 'the auto-closed list is complete')
 assert.match(autoclosedText, /全部完成/, 'no phantom running row')
 assert.match(autoclosedText, /1h/, 'durations come from completedAt, not a live clock')
 assert.doesNotMatch(autoclosedText, /未收尾/, 'no phantom unfinished task')
+
+// Between turns an unfinished plan says how much is left, so the bare count no
+// longer reads like a broken panel.
+const idlePlan = [{ content: '写单元测试', status: 'pending' }, { content: '跑回归', status: 'pending' }]
+textOf(render(dock.component, { sessionId: 'idle-plan-session', useProjection: (key) => (key === 'todos' ? idlePlan : undefined) }))
+await new Promise((resolve) => setTimeout(resolve, 20))
+const idlePlanText = textOf(render(dock.component, {
+  sessionId: 'idle-plan-session',
+  useProjection: (key) => (key === 'todos' ? idlePlan : undefined),
+}))
+assert.match(idlePlanText, /0\/2/, 'the plan keeps its count')
+assert.match(idlePlanText, /2 项未完成/, 'and names the remaining work')
 
 // A running turn stays the main agent's turn: subagents running under it are a
 // count beside the task, not a replacement for its status.

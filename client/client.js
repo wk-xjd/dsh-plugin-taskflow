@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c111'
+    const CLIENT_BUILD = 'c112'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -39,6 +39,7 @@ window.__ModuleLoader__.load({
       'status.stopped': '已停止',
       'status.delegated': '子 agent 执行中',
       'status.delegateCount': '{count} 个子 agent',
+      'status.remaining': '{count} 项未完成',
       'card.pending': '正在整理本段小结…',
       'card.turn': '第 {turn} 段',
       'card.steps': '{count} 步',
@@ -100,6 +101,7 @@ window.__ModuleLoader__.load({
       'status.stopped': 'stopped',
       'status.delegated': 'subagent working',
       'status.delegateCount': '{count} subagents',
+      'status.remaining': '{count} left',
       'card.pending': 'Summarizing this segment…',
       'card.turn': 'Segment {turn}',
       'card.steps': '{count} steps',
@@ -1286,7 +1288,9 @@ window.__ModuleLoader__.load({
                   ? t('status.delegated')
                   : stoppedRows.length > 0 && done < total
                     ? `${t('status.stopped')}：${clip(stoppedRows[stoppedRows.length - 1].content, 30)}`
-                    : (total > 0 && done === total ? t('status.allDone') : '')),
+                    : (total > 0 && done === total
+                      ? t('status.allDone')
+                      : (!turnOpen && total > 0 ? t('status.remaining', { count: total - done }) : ''))),
             turnOpen && delegated
               ? h('span', { className: 'tf-inline-delegates' }, t('status.delegateCount', { count: delegates }))
               : null,
