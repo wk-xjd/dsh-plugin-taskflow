@@ -149,6 +149,61 @@ const fetchFake = async (url, options = {}) => {
     // A turn that has started but produced no list yet.
     return { ok: true, status: 200, json: async () => ({ ...payload, sessionId: 'planning-session', segmentCount: 0, latestSegment: null, openTurn: 9, lastTurn: 8 }) }
   }
+  if (String(url).includes('autoclosed-session')) {
+    // A finished turn auto-closed a leftover, but DSH's own `todos` projection
+    // still says in_progress (this is the 48h spinning row users saw).
+    const startedAt = Date.now() - 6 * 3600 * 1000
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...payload,
+        sessionId: 'autoclosed-session',
+        openTurn: null,
+        inTurn: false,
+        currentListTurn: 3,
+        tasks: {
+          items: {
+            '读文件': { content: '读文件', status: 'completed', firstSeen: startedAt, startedAt, completedAt: startedAt + 3600 * 1000, autoClosed: true },
+            '写结论': { content: '写结论', status: 'completed', firstSeen: startedAt, startedAt, completedAt: startedAt + 2 * 3600 * 1000, autoClosed: true },
+          },
+          updatedAt: 1700,
+        },
+        currentList: [
+          { content: '读文件', status: 'completed' },
+          { content: '写结论', status: 'completed' },
+        ],
+        segmentCount: 1,
+      }),
+    }
+  }
+  if (String(url).includes('stopped-session')) {
+    // A turn the user stopped: the host marked the open row terminal at 12s.
+    const startedAt = Date.now() - 12000
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...payload,
+        sessionId: 'stopped-session',
+        openTurn: null,
+        inTurn: false,
+        delegates: 0,
+        tasks: {
+          items: {
+            '读取远端仓库当前分支': { content: '读取远端仓库当前分支', status: 'stopped', firstSeen: startedAt, startedAt, stoppedAt: startedAt + 12000, stopReason: 'aborted' },
+            '确认临时诊断代码': { content: '确认临时诊断代码', status: 'pending', firstSeen: startedAt },
+          },
+          updatedAt: 1700,
+        },
+        currentList: [
+          { content: '读取远端仓库当前分支', status: 'stopped' },
+          { content: '确认临时诊断代码', status: 'pending' },
+        ],
+        lastTurn: 9,
+      }),
+    }
+  }
   if (String(url).startsWith('/taskflow/summarize')) {
     return { ok: true, status: 200, json: async () => ({ ok: true, queued: true }) }
   }
@@ -287,6 +342,45 @@ const stripText = textOf(render(dock.component, {
 assert.match(stripText, /1\/3/, 'strip shows completion count')
 assert.match(stripText, /写宿主插件/, 'strip shows the active task')
 assert.match(stripText, /1\/3/, 'strip shows task progress inline')
+
+// A stopped turn is terminal: the row is grey with a frozen duration and the
+// header says so, instead of claiming an unfinished task forever.
+textOf(render(dock.component, {
+  sessionId: 'stopped-session',
+  useProjection: (key) => (key === 'todos' ? [
+    { content: '读取远端仓库当前分支', status: 'in_progress' },
+    { content: '确认临时诊断代码', status: 'pending' },
+  ] : undefined),
+}))
+await new Promise((resolve) => setTimeout(resolve, 20))
+const stoppedText = textOf(render(dock.component, {
+  sessionId: 'stopped-session',
+  useProjection: (key) => (key === 'todos' ? [
+    { content: '读取远端仓库当前分支', status: 'in_progress' },
+    { content: '确认临时诊断代码', status: 'pending' },
+  ] : undefined),
+}))
+assert.match(stoppedText, /0\/2/, 'the stopped list keeps its counts')
+assert.match(stoppedText, /已停止/, 'the header names the terminal state')
+assert.match(stoppedText, /12s/, 'the duration is frozen at the stop time')
+assert.doesNotMatch(stoppedText, /未收尾/, 'no phantom unfinished task')
+
+// Host-settled rows win over a stale projection: an auto-closed leftover must
+// render as done even while DSH still reports it in_progress.
+const staleProjection = [
+  { content: '读文件', status: 'in_progress' },
+  { content: '写结论', status: 'in_progress' },
+]
+textOf(render(dock.component, { sessionId: 'autoclosed-session', useProjection: (key) => (key === 'todos' ? staleProjection : undefined) }))
+await new Promise((resolve) => setTimeout(resolve, 20))
+const autoclosedText = textOf(render(dock.component, {
+  sessionId: 'autoclosed-session',
+  useProjection: (key) => (key === 'todos' ? staleProjection : undefined),
+}))
+assert.match(autoclosedText, /2\/2/, 'the auto-closed list is complete')
+assert.match(autoclosedText, /全部完成/, 'no phantom running row')
+assert.match(autoclosedText, /1h/, 'durations come from completedAt, not a live clock')
+assert.doesNotMatch(autoclosedText, /未收尾/, 'no phantom unfinished task')
 
 // No tasks and no summaries still renders a minimal anchor line.
 const emptyText = textOf(render(dock.component, { sessionId: 'other', useProjection: () => null }))

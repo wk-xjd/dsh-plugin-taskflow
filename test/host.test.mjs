@@ -9,7 +9,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -264,8 +264,16 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
   // marked as auto-closed rather than left spinning.
   assert.equal(state.tasks.items['写宿主插件'].status, 'completed')
   assert.equal(state.tasks.items['写宿主插件'].autoClosed, true)
+  assert.equal(
+    state.currentList.find((todo) => todo.content === '写宿主插件').status,
+    'completed',
+    'the published list reports the auto-closed status',
+  )
 
-  // An interrupted turn is the opposite: the item stays open and frozen.
+  // An interrupted turn is the opposite: the work was cut short, so the open
+  // item freezes as a terminal `stopped` row instead of spinning forever. The
+  // published list must carry that status too, or the client would paint it as
+  // running again from the model's own `in_progress` write.
   session.append('turn/start', { turn: 2 })
   session.append('todo/write', {
     todos: [
@@ -277,8 +285,15 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
   session.append('turn/end', { turn: 2, reason: { kind: 'interrupted' } })
   for (const event of session.events.slice(-3)) host.emit('session/event', session, event)
   const interrupted = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-1' })
-  assert.equal(interrupted.json.tasks.items['补客户端面板'].status, 'in_progress')
-  assert.equal(typeof interrupted.json.tasks.items['补客户端面板'].pausedAt, 'number', 'frozen for the human')
+  assert.equal(interrupted.json.tasks.items['补客户端面板'].status, 'stopped')
+  assert.equal(typeof interrupted.json.tasks.items['补客户端面板'].stoppedAt, 'number', 'frozen at the turn end')
+  assert.equal(interrupted.json.tasks.items['补客户端面板'].stopReason, 'interrupted')
+  assert.equal(interrupted.json.tasks.items['补客户端面板'].pausedAt, undefined, 'no stale waiting stamp')
+  assert.equal(
+    interrupted.json.currentList.find((todo) => todo.content === '补客户端面板').status,
+    'stopped',
+    'the published list reports the terminal status',
+  )
   assert.equal(typeof state.tasks.items['写宿主插件'].startedAt, 'number')
   assert.equal(typeof state.tasks.updatedAt, 'number')
 
@@ -358,6 +373,60 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
   })
   assert.equal(after.lastTurn, 2)
   assert.equal(after.segmentCount, 1)
+}
+
+/* ---------------------------------------------------------------------- */
+/* Scenario 1c: pressing stop freezes the running task as stopped          */
+/* ---------------------------------------------------------------------- */
+
+{
+  const host = makeHost()
+  const webServer = makeWebServer(host.routes)
+  const session = makeSession('sess-stop', '/tmp/stop')
+  host.register('webServer', webServer)
+  host.register('sessions', { get: (id) => (id === session.id ? session : undefined) })
+
+  apply(host, { minToolCalls: 1, minAssistantChars: 240 })
+
+  session.append('turn/start', { turn: 1 })
+  session.append('user/message', { id: 'u1', role: 'user', content: [{ type: 'text', text: '查一下远端分支' }], source: { kind: 'user' } })
+  session.append('todo/write', {
+    todos: [
+      { content: '读取远端仓库当前分支、提交与工作区状态', status: 'in_progress' },
+      { content: '确认临时诊断代码是否还在', status: 'pending' },
+      { content: '汇报当前分支与待处理项', status: 'pending' },
+    ],
+  })
+  session.append('tool/call', { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: { command: 'git status' } })
+  session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
+  for (const event of session.events) host.emit('session/event', session, event)
+
+  const stopped = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-stop' })
+  assert.equal(stopped.json.openTurn, null, 'the turn is closed')
+  assert.equal(stopped.json.inTurn, false)
+  const item = stopped.json.tasks.items['读取远端仓库当前分支、提交与工作区状态']
+  assert.equal(item.status, 'stopped', 'a stopped task is terminal, not in progress')
+  assert.equal(typeof item.stoppedAt, 'number')
+  assert.equal(item.stopReason, 'aborted')
+  assert.equal(item.pausedAt, undefined)
+  assert.equal(
+    stopped.json.currentList.find((todo) => todo.content === item.content).status,
+    'stopped',
+    'the strip receives the terminal status, not the model\'s in_progress write',
+  )
+  assert.equal(
+    Object.values(stopped.json.tasks.items).some((todo) => todo.status === 'in_progress'),
+    false,
+    'nothing keeps running after a stop',
+  )
+
+  // A new turn that writes the same task again reopens it.
+  session.append('turn/start', { turn: 2 })
+  session.append('todo/write', { todos: [{ content: item.content, status: 'in_progress' }] })
+  for (const event of session.events.slice(-2)) host.emit('session/event', session, event)
+  const resumed = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-stop' })
+  assert.equal(resumed.json.tasks.items[item.content].status, 'in_progress')
+  assert.equal(resumed.json.tasks.items[item.content].stoppedAt, undefined, 'a fresh write clears the stop stamp')
 }
 
 /* ---------------------------------------------------------------------- */
@@ -503,6 +572,58 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
   })
   assert.equal(after.segmentCount, 1, 'an aborted turn produces no segment')
   assert.equal(after.lastTurn, 6)
+}
+
+/* ---------------------------------------------------------------------- */
+/* Scenario 5: a stopped turn restored from disk must not stay active      */
+/* ---------------------------------------------------------------------- */
+
+{
+  const host = makeHost()
+  const webServer = makeWebServer(host.routes)
+  const session = makeSession('sess-5', '/tmp/stopped')
+  host.register('webServer', webServer)
+  host.register('sessions', { get: (id) => (id === session.id ? session : undefined) })
+
+  // What an older build left on disk: a task frozen as "waiting for the human"
+  // after the user pressed stop. Nothing is running any more.
+  const now = Date.now()
+  const dir = join(home, 'taskflow')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'sess-5.json'), JSON.stringify({
+    version: '0.1.0',
+    sessionId: 'sess-5',
+    updatedAt: now,
+    lastTurn: 1,
+    skipped: [],
+    turns: {},
+    segments: [],
+    tasks: {
+      items: {
+        '导出日志': { content: '导出日志', status: 'in_progress', firstSeen: now - 20_000, startedAt: now - 12_000, pausedAt: now - 1_000 },
+        '写结论': { content: '写结论', status: 'pending', firstSeen: now - 20_000 },
+      },
+      history: [{
+        at: now - 20_000,
+        turn: 1,
+        todos: [
+          { content: '导出日志', status: 'in_progress' },
+          { content: '写结论', status: 'pending' },
+        ],
+      }],
+      updatedAt: now - 20_000,
+    },
+  }))
+
+  session.append('turn/start', { turn: 1 })
+  session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
+  apply(host, { minToolCalls: 1 })
+
+  const restored = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-5' })
+  assert.equal(restored.json.tasks.items['导出日志'].status, 'stopped', 'a legacy paused row settles as stopped')
+  assert.equal(typeof restored.json.tasks.items['导出日志'].stoppedAt, 'number')
+  assert.equal(restored.json.currentList.find((todo) => todo.content === '导出日志').status, 'stopped')
+  assert.equal(restored.json.inTurn, false)
 }
 
 console.log('taskflow host tests passed')

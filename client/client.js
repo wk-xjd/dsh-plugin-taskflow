@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c109'
+    const CLIENT_BUILD = 'c110'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -36,8 +36,7 @@ window.__ModuleLoader__.load({
       'status.in_progress': '进行中',
       'status.completed': '已完成',
       'status.allDone': '全部完成',
-      'status.waiting': '未收尾',
-      'status.waitingHint': '本轮已结束，该任务没有标记完成',
+      'status.stopped': '已停止',
       'status.delegated': '子 agent 执行中',
       'card.pending': '正在整理本段小结…',
       'card.turn': '第 {turn} 段',
@@ -72,7 +71,7 @@ window.__ModuleLoader__.load({
       'settings.title': '任务流',
       'settings.subtitle': '输入框上方显示哪一种任务列表',
       'settings.custom': 'TaskFlow 面板',
-      'settings.customHint': '进度环、当前任务、计时、等待确认/子 agent 状态，点条目看任务小结',
+      'settings.customHint': '进度环、当前任务、计时、已停止/子 agent 状态，点条目看任务小结',
       'settings.builtin': 'DSH 内置面板',
       'settings.builtinHint': '官方样式，只有列表与状态，没有计时与小结',
       'settings.note': '切换立即生效，无需刷新页面。',
@@ -82,6 +81,7 @@ window.__ModuleLoader__.load({
       'tasks.detail.files': '涉及文件',
       'tasks.detail.start': '开始 {time}',
       'tasks.detail.done': '完成 {time}',
+      'tasks.detail.stopped': '停止 {time}',
       'tasks.detail.spent': '用时 {value}',
       'strip.sidebar': '查看全部小结',
       'panel.allSummaries': '全部小结',
@@ -96,8 +96,7 @@ window.__ModuleLoader__.load({
       'status.in_progress': 'in progress',
       'status.completed': 'done',
       'status.allDone': 'all done',
-      'status.waiting': 'unfinished',
-      'status.waitingHint': 'turn ended without closing this task',
+      'status.stopped': 'stopped',
       'status.delegated': 'subagent working',
       'card.pending': 'Summarizing this segment…',
       'card.turn': 'Segment {turn}',
@@ -132,7 +131,7 @@ window.__ModuleLoader__.load({
       'settings.title': 'TaskFlow',
       'settings.subtitle': 'Which task list to show above the composer',
       'settings.custom': 'TaskFlow panel',
-      'settings.customHint': 'progress ring, current task, timing, waiting/subagent state, per-task summaries',
+      'settings.customHint': 'progress ring, current task, timing, stopped/subagent state, per-task summaries',
       'settings.builtin': 'Built-in DSH panel',
       'settings.builtinHint': 'the shipped list and statuses only',
       'settings.note': 'Applies immediately; no reload needed.',
@@ -142,6 +141,7 @@ window.__ModuleLoader__.load({
       'tasks.detail.files': 'Files',
       'tasks.detail.start': 'started {time}',
       'tasks.detail.done': 'done {time}',
+      'tasks.detail.stopped': 'stopped {time}',
       'tasks.detail.spent': 'took {value}',
       'strip.sidebar': 'All summaries',
       'panel.allSummaries': 'All summaries',
@@ -242,6 +242,8 @@ window.__ModuleLoader__.load({
 .tf-inline-head[data-state="done"] .tf-inline-count { opacity: .8; }
 .tf-inline-head[data-state="done"] .tf-inline-current { opacity: .95; }
 .tf-inline-head[data-state="running"] .tf-inline-current { color: #e3b341; opacity: .85; }
+.tf-inline-head[data-state="stopped"] { color: #8b949e; }
+.tf-inline-head[data-state="stopped"] .tf-inline-current { color: #8b949e; opacity: .6; }
 .tf-inline-count { flex: 0 0 auto; font-variant-numeric: tabular-nums; opacity: .45; }
 .tf-inline-current { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .55; }
 .tf-inline-toggle { flex: 0 0 auto; width: 18px; height: 18px; padding: 0; border: 0; background: transparent; color: inherit; opacity: .45; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
@@ -272,6 +274,9 @@ window.__ModuleLoader__.load({
 .tf-item-btn[data-status="in_progress"] .tf-item-text { font-weight: 500; }
 .tf-item-btn[data-status="pending"] .tf-item-mark { opacity: .45; }
 .tf-item-btn[data-status="pending"] .tf-item-text { opacity: .72; }
+.tf-item-btn[data-status="stopped"] .tf-item-mark { color: #8b949e; opacity: .8; }
+.tf-item-btn[data-status="stopped"] .tf-item-text { opacity: .58; }
+.tf-item-btn[data-status="stopped"] .tf-item-time { opacity: .38; }
 .tf-item-text { flex: 1 1 auto; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; word-break: break-word; }
 .tf-item-parallel { opacity: .5; font-variant-numeric: tabular-nums; }
 .tf-item-time { flex: 0 0 auto; opacity: .3; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.6; }
@@ -312,6 +317,8 @@ window.__ModuleLoader__.load({
 .tf-tasks-item[data-status="in_progress"] .tf-tasks-text { font-weight: 500; }
 .tf-tasks-item[data-status="pending"] .tf-tasks-mark { opacity: .45; }
 .tf-tasks-item[data-status="pending"] .tf-tasks-text { opacity: .72; }
+.tf-tasks-item[data-status="stopped"] .tf-tasks-mark { color: #8b949e; opacity: .85; }
+.tf-tasks-item[data-status="stopped"] .tf-tasks-text { opacity: .6; }
 .tf-tasks-text { flex: 1 1 auto; min-width: 0; }
 .tf-header-btn { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border: 1px solid color-mix(in oklab, currentColor 14%, transparent); border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 11px; line-height: 1; cursor: pointer; opacity: .72; }
 .tf-header-btn:hover { opacity: 1; background: color-mix(in oklab, currentColor 7%, transparent); }
@@ -705,6 +712,7 @@ window.__ModuleLoader__.load({
 
     function statusGlyph(status) {
       if (status === 'completed') return '✓'
+      if (status === 'stopped') return '■'
       if (status === 'in_progress') return '◐'
       return '○'
     }
@@ -721,16 +729,47 @@ window.__ModuleLoader__.load({
       return Array.isArray(projection) ? projection : []
     }
 
+    /**
+     * The status to paint for one row. The model's last write still says
+     * `in_progress` for a task whose turn later ended, so the host's own item
+     * state wins when it is trustworthy: `completed` (auto-closed leftovers) and
+     * `stopped` (legacy `pausedAt` too) are terminal.
+     *
+     * `trust` is false when a turn is open but this window has not seen its list
+     * yet: the host's item state then belongs to an older turn and must not
+     * override the live projection.
+     */
+    function effectiveStatus(todo, timing, trust = true) {
+      if (!trust || todo.status !== 'in_progress' || !timing) return todo.status
+      if (timing.status === 'completed') return 'completed'
+      if (timing.status === 'stopped' || typeof timing.stoppedAt === 'number') return 'stopped'
+      if (typeof timing.pausedAt === 'number') return 'stopped'
+      return todo.status
+    }
+
+    /** Whether the host's item statuses describe the list we are painting. */
+    function trustHostStatus(snapshot) {
+      if (typeof snapshot?.openTurn !== 'number') return true
+      return typeof snapshot?.currentListTurn === 'number' && snapshot.currentListTurn === snapshot.openTurn
+    }
+
     /** Per-task timing for the current list, merging projection + host timings. */
     function mergeTasks(todos, snapshot, now = Date.now()) {
       const items = snapshot?.tasks?.items ?? {}
+      const trust = trustHostStatus(snapshot)
       return (todos || []).map((todo) => {
         const timing = items[todo.content]
+        const status = effectiveStatus(todo, timing, trust)
         let elapsed = null
-        if (todo.status === 'completed' && timing?.startedAt && timing?.completedAt) elapsed = timing.completedAt - timing.startedAt
-        else if (todo.status === 'in_progress' && timing?.pausedAt && timing?.startedAt && !snapshot?.delegates) elapsed = timing.pausedAt - timing.startedAt
-        else if (todo.status === 'in_progress' && timing?.startedAt) elapsed = now - timing.startedAt
-        return { ...todo, elapsed }
+        if (status === 'completed' && timing?.startedAt && timing?.completedAt) {
+          elapsed = timing.completedAt - timing.startedAt
+        } else if (status === 'stopped' && timing?.startedAt) {
+          const end = timing.stoppedAt ?? timing.pausedAt ?? now
+          elapsed = Math.max(0, end - timing.startedAt)
+        } else if (status === 'in_progress' && timing?.startedAt) {
+          elapsed = now - timing.startedAt
+        }
+        return { ...todo, status, elapsed }
       })
     }
 
@@ -854,9 +893,14 @@ window.__ModuleLoader__.load({
       // panel.
       const hostList = Array.isArray(snapshot.currentList) ? snapshot.currentList : []
       const list = projectionList.length > 0 ? projectionList : hostList
-      // Re-render every second while something runs, so the timer advances even
-      // when no state frame arrives.
-      const now = useNow(list.some((todo) => todo.status === 'in_progress'))
+      // Re-render every second only while a task is genuinely running, so the
+      // timer advances even when no state frame arrives. A stopped row keeps a
+      // frozen duration and must not hold a 1s interval open.
+      const nowItems = snapshot?.tasks?.items ?? {}
+      const nowTrust = trustHostStatus(snapshot)
+      const ticking = list.some((todo) => todo.status === 'in_progress'
+        && effectiveStatus(todo, nowItems[todo.content], nowTrust) === 'in_progress')
+      const now = useNow(ticking)
       const [collapsed, setCollapsed] = React.useState(props.compact === true)
       const [showAllDone, setShowAllDone] = React.useState(false)
       const [detail, setDetailState] = React.useState(uiState.detail)
@@ -886,14 +930,16 @@ window.__ModuleLoader__.load({
 
       const turnOpen = typeof snapshot.openTurn === 'number'
       const delegated = Number(snapshot.delegates) > 0
-      // A subagent still working means the work is NOT paused, even though this
-      // turn is over.
-      const waiting = !turnOpen && !delegated
-      const active = list.find((todo) => todo.status === 'in_progress')
-      const running = list.filter((todo) => todo.status === 'in_progress').length
+      // Merged rows carry the host's terminal statuses: a list whose turn was
+      // stopped keeps its history but contains no running task, so it must not
+      // look like the agent is still working on it.
+      const merged = mergeTasks(list, snapshot, now)
+      const active = merged.find((todo) => todo.status === 'in_progress')
+      const stoppedRows = merged.filter((todo) => todo.status === 'stopped')
+      const running = merged.filter((todo) => todo.status === 'in_progress').length
       const parallel = running > 1
-      const total = list.length
-      const done = list.filter((todo) => todo.status === 'completed').length
+      const total = merged.length
+      const done = merged.filter((todo) => todo.status === 'completed').length
       const segmentCount = Number(snapshot.segmentCount) || 0
       const latest = snapshot.latestSegment || null
       const layoutNote = liveLayout.current ? JSON.stringify(liveLayout.current) : ''
@@ -1064,7 +1110,6 @@ window.__ModuleLoader__.load({
             h('span', { className: 'tf-pill-text' }, clip(latest.title || '', 20)))))
       }
 
-      const merged = mergeTasks(list, snapshot, now)
       // Show every row; the list scrolls (with a visible scrollbar) instead of
       // hiding finished work behind a disclosure the user has to discover.
       const visible = merged
@@ -1086,11 +1131,13 @@ window.__ModuleLoader__.load({
           ? ''
           : item.summaryPending
             ? t('tasks.summary.pending')
-            : todo.status === 'completed' ? t('tasks.summary.none') : ''
+            : todo.status === 'completed'
+              ? t('tasks.summary.none')
+              : todo.status === 'stopped' ? t('status.stopped') : ''
         const body = [
           h('span', { className: 'tf-item-mark', 'data-state': todo.status, 'aria-hidden': true },
             todo.status === 'in_progress'
-              ? (waiting ? '⏸' : h('span', { className: 'tf-dot' }))
+              ? h('span', { className: 'tf-dot' })
               : statusGlyph(todo.status)),
           h('span', { className: 'tf-item-text' },
             parallel && todo.status === 'in_progress' ? h('span', { className: 'tf-item-parallel' }, '∥ ') : null,
@@ -1105,7 +1152,6 @@ window.__ModuleLoader__.load({
               type: 'button',
               className: 'tf-item-btn',
               'data-status': todo.status,
-              'data-waiting': waiting && todo.status === 'in_progress' ? 'true' : 'false',
               'data-delegated': delegated && todo.status === 'in_progress' ? 'true' : 'false',
               'data-active': detail && detail.content === todo.content ? 'true' : 'false',
               title: summary,
@@ -1114,7 +1160,6 @@ window.__ModuleLoader__.load({
             : h('div', {
               className: 'tf-item-btn',
               'data-status': todo.status,
-              'data-waiting': waiting && todo.status === 'in_progress' ? 'true' : 'false',
               'data-delegated': delegated && todo.status === 'in_progress' ? 'true' : 'false',
               'data-static': 'true',
             }, body))
@@ -1125,8 +1170,10 @@ window.__ModuleLoader__.load({
         : {}
       const detailElapsed = (() => {
         if (detailTiming.startedAt && detailTiming.completedAt) return detailTiming.completedAt - detailTiming.startedAt
-        if (detailTiming.startedAt) return Date.now() - detailTiming.startedAt
-        return null
+        if (!detailTiming.startedAt) return null
+        // A stopped task has a frozen end time; only live work keeps counting.
+        const end = detailTiming.stoppedAt ?? detailTiming.pausedAt
+        return typeof end === 'number' ? Math.max(0, end - detailTiming.startedAt) : Date.now() - detailTiming.startedAt
       })()
 
       const detailPopover = detail && ReactDOM && typeof ReactDOM.createPortal === 'function'
@@ -1158,6 +1205,11 @@ window.__ModuleLoader__.load({
             h('span', { className: 'tf-detail-key' }, t('tasks.detail.done', { time: '' }).replace(/\s+$/, '')),
             h('span', { className: 'tf-detail-val' }, fmtClock(detailTiming.completedAt)))
           : null,
+        detailTiming.stoppedAt || detailTiming.pausedAt
+          ? h('div', { className: 'tf-detail-row' },
+            h('span', { className: 'tf-detail-key' }, t('tasks.detail.stopped', { time: '' }).replace(/\s+$/, '')),
+            h('span', { className: 'tf-detail-val' }, fmtClock(detailTiming.stoppedAt ?? detailTiming.pausedAt)))
+          : null,
         detailElapsed !== null
           ? h('div', { className: 'tf-detail-row' },
             h('span', { className: 'tf-detail-key' }, t('tasks.detail.spent', { value: '' }).replace(/\s+$/, '')),
@@ -1186,7 +1238,11 @@ window.__ModuleLoader__.load({
         },
           h('div', {
             className: 'tf-inline-head',
-            'data-state': active && waiting ? 'waiting' : (active && delegated ? 'delegated' : (total > 0 && done === total ? 'done' : (active ? 'running' : 'idle'))),
+            'data-state': active && delegated
+              ? 'delegated'
+              : (total > 0 && done === total
+                ? 'done'
+                : (active ? 'running' : (stoppedRows.length > 0 ? 'stopped' : 'idle'))),
           },
             h('button', {
               type: 'button',
@@ -1200,10 +1256,10 @@ window.__ModuleLoader__.load({
             h('span', { className: 'tf-inline-count' }, `${done}/${total}`),
             h('span', { className: 'tf-inline-current' },
               active
-                ? (waiting
-                  ? `${t('status.waiting')}：${clip(active.content, 30)}`
-                  : (delegated ? `${t('status.delegated')}：${clip(active.content, 30)}` : active.content))
-                : (done === total ? t('status.allDone') : '')),
+                ? (delegated ? `${t('status.delegated')}：${clip(active.content, 30)}` : active.content)
+                : stoppedRows.length > 0 && done < total
+                  ? `${t('status.stopped')}：${clip(stoppedRows[stoppedRows.length - 1].content, 30)}`
+                  : (total > 0 && done === total ? t('status.allDone') : '')),
             h('button', {
               type: 'button',
               className: 'tf-inline-toggle',
@@ -1260,18 +1316,24 @@ window.__ModuleLoader__.load({
       const args = callArgs(props.block)
       const todos = Array.isArray(args.todos) ? args.todos : []
       const rootRef = React.useRef(null)
-      const done = todos.filter((todo) => todo.status === 'completed').length
-      const allDone = todos.length > 0 && done === todos.length
+      // The tool arguments are the model's write; when its turn was later
+      // stopped, the host holds the terminal status. Paint that instead, so a
+      // stopped list never reappears as "running" in the transcript.
+      const snapshot = useSnapshot(props.sessionId)
+      const items = snapshot.tasks?.items ?? {}
+      const trust = trustHostStatus(snapshot)
+      const rows = todos.map((todo) => ({ ...todo, status: effectiveStatus(todo, items[todo.content], trust) }))
+      const done = rows.filter((todo) => todo.status === 'completed').length
+      const allDone = rows.length > 0 && done === rows.length
       // When the composer panel is already showing this exact list, the card in
       // the transcript folds to one line instead of printing it twice.
-      const snapshot = useSnapshot(props.sessionId)
       const liveList = Array.isArray(snapshot.currentList) ? snapshot.currentList : []
       const mirror = liveList.length > 0
-        && liveList.length === todos.length
-        && liveList.every((entry, index) => entry.content === todos[index]?.content && entry.status === todos[index]?.status)
+        && liveList.length === rows.length
+        && liveList.every((entry, index) => entry.content === rows[index]?.content && entry.status === rows[index]?.status)
       const [userOpen, setUserOpen] = React.useState(null)
       const open = userOpen === null ? !mirror : userOpen
-      useReportGeometry('taskcard', rootRef, `${todos.length} items ${open ? 'open' : 'folded'}`)
+      useReportGeometry('taskcard', rootRef, `${rows.length} items ${open ? 'open' : 'folded'}`)
 
       // A call still streaming its arguments renders nothing, so the transcript
       // never flashes an empty card.
@@ -1285,14 +1347,14 @@ window.__ModuleLoader__.load({
           onClick: () => setUserOpen((value) => !(value === null ? open : value)),
         },
         h('span', { className: 'tf-tasks-caret', 'aria-hidden': true }, open ? '▾' : '▸'),
-        h('span', null, t('tasks.header', { total: todos.length, done, open: todos.length - done }))),
-        open ? h('ul', { className: 'tf-tasks-list' }, todos.map((todo, index) => h('li', {
+        h('span', null, t('tasks.header', { total: rows.length, done, open: rows.length - done }))),
+        open ? h('ul', { className: 'tf-tasks-list' }, rows.map((todo, index) => h('li', {
           key: `${index}-${todo.content}`,
           className: 'tf-tasks-item',
           'data-status': todo.status,
         },
         h('span', { className: 'tf-tasks-mark', 'aria-hidden': true },
-          todo.status === 'completed' ? '✔' : todo.status === 'in_progress' ? '◐' : '□'),
+          todo.status === 'completed' ? '✔' : todo.status === 'stopped' ? '■' : todo.status === 'in_progress' ? '◐' : '□'),
         h('span', { className: 'tf-tasks-text' }, todo.content)))) : null)
     }
 
