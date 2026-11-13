@@ -149,6 +149,55 @@ const fetchFake = async (url, options = {}) => {
     // A turn that has started but produced no list yet.
     return { ok: true, status: 200, json: async () => ({ ...payload, sessionId: 'planning-session', segmentCount: 0, latestSegment: null, openTurn: 9, lastTurn: 8 }) }
   }
+  if (String(url).includes('delegated-open-session')) {
+    // The main turn is running and three subagents work under it: the header
+    // must keep naming the main task, with the subagent count beside it.
+    const startedAt = Date.now() - 6 * 60 * 1000
+    const currentList = [
+      { content: '从 domain_cn.cfg 提取映射到 lingxi.wps.cn 的域名 key', status: 'in_progress' },
+      { content: '全仓检索这些 key 与硬编码 lingxi.wps.cn 的引用点清单', status: 'pending' },
+      { content: '∥ 子 agent：按插件簇统计 lingxi.wps.cn 的接口路径与代码位置', status: 'pending' },
+    ]
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...payload,
+        sessionId: 'delegated-open-session',
+        openTurn: 7,
+        inTurn: true,
+        currentListTurn: 7,
+        delegates: 3,
+        tasks: {
+          items: {
+            [currentList[0].content]: { content: currentList[0].content, status: 'in_progress', firstSeen: startedAt, startedAt },
+            [currentList[2].content]: { content: currentList[2].content, status: 'pending', firstSeen: startedAt },
+          },
+          updatedAt: 1700,
+        },
+        currentList,
+      }),
+    }
+  }
+  if (String(url).includes('delegated-closed-session')) {
+    // The parent turn is over but a subagent still runs: now the delegated
+    // label is the truthful header.
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ...payload,
+        sessionId: 'delegated-closed-session',
+        openTurn: null,
+        inTurn: false,
+        delegates: 1,
+        currentList: [
+          { content: '∥ 子 agent：统计内置 Web 前端的 lingxi 接口', status: 'pending' },
+        ],
+        tasks: { items: {}, updatedAt: 1700 },
+      }),
+    }
+  }
   if (String(url).includes('autoclosed-session')) {
     // A finished turn auto-closed a leftover, but DSH's own `todos` projection
     // still says in_progress (this is the 48h spinning row users saw).
@@ -324,6 +373,25 @@ function render(component, props) {
   return component(props)
 }
 
+/** Collect every element node matching a predicate, evaluating components. */
+function findAll(node, predicate, out = []) {
+  if (!node || typeof node !== 'object') return out
+  if (Array.isArray(node)) {
+    for (const item of node) findAll(item, predicate, out)
+    return out
+  }
+  if (predicate(node)) out.push(node)
+  if (typeof node.type === 'function') {
+    const rendered = node.type.prototype && node.type.prototype.isReactComponent
+      ? new node.type(node.props).render()
+      : node.type(node.props)
+    findAll(rendered, predicate, out)
+    return out
+  }
+  findAll(node.props?.children, predicate, out)
+  return out
+}
+
 const todos = [
   { content: '读插件 API', status: 'completed' },
   { content: '写宿主插件', status: 'in_progress' },
@@ -381,6 +449,39 @@ assert.match(autoclosedText, /2\/2/, 'the auto-closed list is complete')
 assert.match(autoclosedText, /全部完成/, 'no phantom running row')
 assert.match(autoclosedText, /1h/, 'durations come from completedAt, not a live clock')
 assert.doesNotMatch(autoclosedText, /未收尾/, 'no phantom unfinished task')
+
+// A running turn stays the main agent's turn: subagents running under it are a
+// count beside the task, not a replacement for its status.
+const delegatedProjection = [
+  { content: '从 domain_cn.cfg 提取映射到 lingxi.wps.cn 的域名 key', status: 'in_progress' },
+  { content: '全仓检索这些 key 与硬编码 lingxi.wps.cn 的引用点清单', status: 'pending' },
+  { content: '∥ 子 agent：按插件簇统计 lingxi.wps.cn 的接口路径与代码位置', status: 'pending' },
+]
+textOf(render(dock.component, { sessionId: 'delegated-open-session', useProjection: (key) => (key === 'todos' ? delegatedProjection : undefined) }))
+await new Promise((resolve) => setTimeout(resolve, 20))
+const delegatedOpenText = textOf(render(dock.component, {
+  sessionId: 'delegated-open-session',
+  useProjection: (key) => (key === 'todos' ? delegatedProjection : undefined),
+}))
+assert.match(delegatedOpenText, /从 domain_cn\.cfg/, 'the header still names the main task')
+assert.match(delegatedOpenText, /3 个子 agent/, 'the subagent count is shown beside it')
+assert.doesNotMatch(delegatedOpenText, /子 agent 执行中：/, 'no delegated prefix while the main turn is open')
+assert.match(delegatedOpenText, /∥ 子 agent：按插件簇/, 'the parallel row keeps its text')
+
+const delegatedTree = render(dock.component, {
+  sessionId: 'delegated-open-session',
+  useProjection: (key) => (key === 'todos' ? delegatedProjection : undefined),
+})
+const allRows = findAll(delegatedTree, (node) => node.props?.className === 'tf-item-btn')
+const delegatedRows = allRows.filter((row) => row.props['data-delegated'] === 'true')
+assert.equal(delegatedRows.length, 1, 'only the parallel row is painted as delegated')
+assert.match(textOf(delegatedRows[0]), /∥ 子 agent：按插件簇/, 'and it is the right row')
+
+// Only when the parent turn is over does the delegated label own the header.
+textOf(render(dock.component, { sessionId: 'delegated-closed-session', useProjection: () => null }))
+await new Promise((resolve) => setTimeout(resolve, 20))
+const delegatedClosedText = textOf(render(dock.component, { sessionId: 'delegated-closed-session', useProjection: () => null }))
+assert.match(delegatedClosedText, /子 agent 执行中/, 'a finished turn with a running subagent says so')
 
 // No tasks and no summaries still renders a minimal anchor line.
 const emptyText = textOf(render(dock.component, { sessionId: 'other', useProjection: () => null }))

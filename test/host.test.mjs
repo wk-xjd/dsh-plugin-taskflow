@@ -575,6 +575,37 @@ function waitFor(predicate, { timeout = 4000, step = 20 } = {}) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* Scenario 4b: a child that started before the reload still counts         */
+/* ---------------------------------------------------------------------- */
+
+{
+  const host = makeHost()
+  const webServer = makeWebServer(host.routes)
+  const parent = makeSession('sess-parent', '/tmp/delegates')
+  const child = makeSession('sess-child', '/tmp/delegates')
+  child.header = { origin: 'subagent', parentSession: 'sess-parent' }
+  host.register('webServer', webServer)
+  host.register('sessions', { get: (id) => (id === parent.id ? parent : id === child.id ? child : undefined) })
+
+  apply(host, { minToolCalls: 1 })
+
+  parent.append('turn/start', { turn: 1 })
+  host.emit('session/event', parent, parent.events.at(-1))
+
+  // The child's turn/start happened while the plugin was not mounted; only a
+  // later step event reaches it, which must still count as "working".
+  child.append('step/start', { turn: 1, step: 4 })
+  host.emit('session/event', child, child.events.at(-1))
+  const working = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-parent' })
+  assert.equal(working.json.delegates, 1, 'a running child is counted after a reload')
+
+  child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  host.emit('session/event', child, child.events.at(-1))
+  const done = await callRoute(host, '/taskflow/state', { url: '/taskflow/state?session=sess-parent' })
+  assert.equal(done.json.delegates, 0, 'a finished child stops counting')
+}
+
+/* ---------------------------------------------------------------------- */
 /* Scenario 5: a stopped turn restored from disk must not stay active      */
 /* ---------------------------------------------------------------------- */
 

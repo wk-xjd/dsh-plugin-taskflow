@@ -13,7 +13,7 @@ window.__ModuleLoader__.load({
     const ID = 'dsh-plugin-taskflow'
     // Bumped whenever the browser half changes: the host reports the live value
     // in /taskflow/health, which is how a stale page is detected.
-    const CLIENT_BUILD = 'c110'
+    const CLIENT_BUILD = 'c111'
     /**
      * true  = shadow DSH's own todo panel (id 'todo', priority -1)
      * false = render beside it (unique id), so both lists are visible
@@ -38,6 +38,7 @@ window.__ModuleLoader__.load({
       'status.allDone': '全部完成',
       'status.stopped': '已停止',
       'status.delegated': '子 agent 执行中',
+      'status.delegateCount': '{count} 个子 agent',
       'card.pending': '正在整理本段小结…',
       'card.turn': '第 {turn} 段',
       'card.steps': '{count} 步',
@@ -98,6 +99,7 @@ window.__ModuleLoader__.load({
       'status.allDone': 'all done',
       'status.stopped': 'stopped',
       'status.delegated': 'subagent working',
+      'status.delegateCount': '{count} subagents',
       'card.pending': 'Summarizing this segment…',
       'card.turn': 'Segment {turn}',
       'card.steps': '{count} steps',
@@ -259,7 +261,11 @@ window.__ModuleLoader__.load({
 .tf-item-btn { position: relative; display: flex; align-items: flex-start; gap: 9px; width: 100%; box-sizing: border-box; padding: 6px 7px; border: 0; border-radius: 11px; background: transparent; color: inherit; font: inherit; font-size: 12.5px; line-height: 1.6; text-align: left; cursor: pointer; }
 .tf-item-btn:hover, .tf-item-btn[data-active="true"] { background: color-mix(in oklab, currentColor 7%, transparent); }
 .tf-item-btn[data-delegated="true"] { background: color-mix(in oklab, #8b7cff 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, #8b7cff 24%, transparent); }
+.tf-item-btn[data-delegated="true"] .tf-item-mark { color: #a99bff; opacity: .95; }
+.tf-item-btn[data-delegated="true"] .tf-item-hint { color: #a99bff; opacity: .5; }
+.tf-item-btn[data-delegated="true"][data-status="pending"] { background: color-mix(in oklab, #8b7cff 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, #8b7cff 20%, transparent); }
 .tf-inline-head[data-state="delegated"] .tf-inline-current { color: #a99bff; opacity: .95; }
+.tf-inline-delegates { flex: 0 0 auto; font-size: 10.5px; line-height: 1; color: #a99bff; opacity: .82; white-space: nowrap; }
 .tf-item-btn[data-waiting="true"] { background: color-mix(in oklab, #d2a24c 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, #d2a24c 48%, transparent), 0 0 10px rgba(210, 162, 76, .10); }
 .tf-item-btn[data-waiting="true"]::before { content: ''; position: absolute; inset: 0; border-radius: 11px; padding: 1px; background: color-mix(in oklab, #d2a24c 60%, transparent); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; pointer-events: none; }
 .tf-item-btn[data-waiting="true"] .tf-item-mark { color: #d2a24c; opacity: .9; }
@@ -929,11 +935,24 @@ window.__ModuleLoader__.load({
       // switching conversations must not pop a panel in the user's face.
 
       const turnOpen = typeof snapshot.openTurn === 'number'
-      const delegated = Number(snapshot.delegates) > 0
+      const delegates = Number(snapshot.delegates) || 0
+      const delegated = delegates > 0
       // Merged rows carry the host's terminal statuses: a list whose turn was
       // stopped keeps its history but contains no running task, so it must not
       // look like the agent is still working on it.
       const merged = mergeTasks(list, snapshot, now)
+      // A running turn is the main agent's turn: subagents working under it are
+      // extra parallelism, not a different status for the current task. Only
+      // once the turn is over does "子 agent 执行中" describe what is still going.
+      const delegatedActive = delegated && !turnOpen
+      // The model often leaves `∥` parallel rows pending while their subagents
+      // already run. Paint those as delegated; it is display-only, so they stay
+      // out of the completion count and never become the active row.
+      const delegatedRows = delegated
+        ? new Set(merged
+          .filter((todo) => todo.status === 'pending' && todo.content.trimStart().startsWith('∥'))
+          .map((todo) => todo.content))
+        : null
       const active = merged.find((todo) => todo.status === 'in_progress')
       const stoppedRows = merged.filter((todo) => todo.status === 'stopped')
       const running = merged.filter((todo) => todo.status === 'in_progress').length
@@ -1127,13 +1146,17 @@ window.__ModuleLoader__.load({
       const rows = visible.map((todo) => {
         const item = snapshot.tasks?.items?.[todo.content] || {}
         const summary = typeof item.summary === 'string' ? item.summary : ''
+        const rowDelegated = (delegatedRows !== null && delegatedRows.has(todo.content))
+          || (delegatedActive && todo.content === active?.content)
         const hint = summary
           ? ''
           : item.summaryPending
             ? t('tasks.summary.pending')
             : todo.status === 'completed'
               ? t('tasks.summary.none')
-              : todo.status === 'stopped' ? t('status.stopped') : ''
+              : todo.status === 'stopped'
+                ? t('status.stopped')
+                : rowDelegated ? t('status.delegated') : ''
         const body = [
           h('span', { className: 'tf-item-mark', 'data-state': todo.status, 'aria-hidden': true },
             todo.status === 'in_progress'
@@ -1152,7 +1175,7 @@ window.__ModuleLoader__.load({
               type: 'button',
               className: 'tf-item-btn',
               'data-status': todo.status,
-              'data-delegated': delegated && todo.status === 'in_progress' ? 'true' : 'false',
+              'data-delegated': rowDelegated ? 'true' : 'false',
               'data-active': detail && detail.content === todo.content ? 'true' : 'false',
               title: summary,
               onClick: (event) => openDetail(todo.content, event.currentTarget),
@@ -1160,7 +1183,7 @@ window.__ModuleLoader__.load({
             : h('div', {
               className: 'tf-item-btn',
               'data-status': todo.status,
-              'data-delegated': delegated && todo.status === 'in_progress' ? 'true' : 'false',
+              'data-delegated': rowDelegated ? 'true' : 'false',
               'data-static': 'true',
             }, body))
       })
@@ -1238,11 +1261,13 @@ window.__ModuleLoader__.load({
         },
           h('div', {
             className: 'tf-inline-head',
-            'data-state': active && delegated
-              ? 'delegated'
-              : (total > 0 && done === total
-                ? 'done'
-                : (active ? 'running' : (stoppedRows.length > 0 ? 'stopped' : 'idle'))),
+            'data-state': active
+              ? (delegatedActive ? 'delegated' : 'running')
+              : (!turnOpen && delegated
+                ? 'delegated'
+                : (total > 0 && done === total
+                  ? 'done'
+                  : (stoppedRows.length > 0 ? 'stopped' : 'idle'))),
           },
             h('button', {
               type: 'button',
@@ -1256,10 +1281,15 @@ window.__ModuleLoader__.load({
             h('span', { className: 'tf-inline-count' }, `${done}/${total}`),
             h('span', { className: 'tf-inline-current' },
               active
-                ? (delegated ? `${t('status.delegated')}：${clip(active.content, 30)}` : active.content)
-                : stoppedRows.length > 0 && done < total
-                  ? `${t('status.stopped')}：${clip(stoppedRows[stoppedRows.length - 1].content, 30)}`
-                  : (total > 0 && done === total ? t('status.allDone') : '')),
+                ? (delegatedActive ? `${t('status.delegated')}：${clip(active.content, 30)}` : active.content)
+                : (!turnOpen && delegated)
+                  ? t('status.delegated')
+                  : stoppedRows.length > 0 && done < total
+                    ? `${t('status.stopped')}：${clip(stoppedRows[stoppedRows.length - 1].content, 30)}`
+                    : (total > 0 && done === total ? t('status.allDone') : '')),
+            turnOpen && delegated
+              ? h('span', { className: 'tf-inline-delegates' }, t('status.delegateCount', { count: delegates }))
+              : null,
             h('button', {
               type: 'button',
               className: 'tf-inline-toggle',
